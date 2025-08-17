@@ -21,7 +21,9 @@ class CoevalSimulator(BaseSimulator):
         regenerate: bool = False,
         global_params: dict | None = None,
     ):
-        super().__init__(inputs_21cmfast, varied_params, cache_dir, regenerate, global_params)
+        super().__init__(
+            inputs_21cmfast, varied_params, cache_dir, regenerate, global_params
+        )
         self.redshifts = redshifts
 
     def simulate(self):
@@ -48,6 +50,7 @@ class CoevalNeutralFraction(CoevalSimulator):
     """
     Simulate the coeval cubes and calculate the 1DPS.
     """
+
     def build_model_data(self):
         super().build_model_data()
         xhibox = [

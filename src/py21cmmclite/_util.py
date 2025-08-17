@@ -5,10 +5,12 @@ from py21cmfast.io.caching import OutputCache
 
 logger = logging.getLogger("21cmFAST")
 
+
 class BaseSimulator:
     """
     Base class for constructing simulators and likelihoods.
     """
+
     def __init__(
         self,
         inputs_21cmfast,
