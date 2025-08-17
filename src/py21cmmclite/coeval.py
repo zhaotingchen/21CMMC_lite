@@ -2,36 +2,27 @@ import logging
 import numpy as np
 import py21cmfast as p21
 from py21cmfast.io.caching import OutputCache
-from os import path
-from powerbox.tools import get_power
-
+from ._util import BaseSimulator
 
 logger = logging.getLogger("21cmFAST")
 
 
-class CoevalSimulator:
+class CoevalSimulator(BaseSimulator):
     """
     Basic simulator for coeval cubes.
     """
 
     def __init__(
         self,
-        redshifts,
-        inputs_21cmfast,
-        varied_params,
-        cache_dir,
-        regenerate=False,
-        global_params=None,
+        redshifts: list[float] | np.ndarray,
+        inputs_21cmfast: p21.InputParameters,
+        varied_params: dict,
+        cache_dir: str,
+        regenerate: bool = False,
+        global_params: dict | None = None,
     ):
+        super().__init__(inputs_21cmfast, varied_params, cache_dir, regenerate, global_params)
         self.redshifts = redshifts
-        self.inputs_21cmfast = inputs_21cmfast
-        self.varied_params = varied_params
-        self.inputs_simulator = self.inputs_21cmfast.evolve_input_structs(
-            **self.varied_params
-        )
-        self.cache_dir = cache_dir
-        self.regenerate = regenerate
-        self.global_params = global_params or {}
 
     def simulate(self):
         """
@@ -57,30 +48,6 @@ class CoevalNeutralFraction(CoevalSimulator):
     """
     Simulate the coeval cubes and calculate the 1DPS.
     """
-
-    def __init__(
-        self,
-        redshifts,
-        inputs_21cmfast,
-        varied_params,
-        cache_dir,
-        n_psbins=None,
-        min_k=0.1,
-        max_k=1.0,
-        logk=True,
-        ignore_kperp_zero=True,
-        ignore_kpar_zero=False,
-        ignore_k_zero=False,
-    ):
-        super().__init__(redshifts, inputs_21cmfast, varied_params, cache_dir)
-        self.n_psbins = n_psbins
-        self.min_k = min_k
-        self.max_k = max_k
-        self.logk = logk
-        self.ignore_k_zero = ignore_k_zero
-        self.ignore_kperp_zero = ignore_kperp_zero
-        self.ignore_kpar_zero = ignore_kpar_zero
-
     def build_model_data(self):
         super().build_model_data()
         xhibox = [
