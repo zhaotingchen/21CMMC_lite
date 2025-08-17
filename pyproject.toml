@@ -18,6 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "21cmFAST",
+    "powerbox",
     "nautilus-sampler",
 ]
 
