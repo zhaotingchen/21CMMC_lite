@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=43.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "21cmmclite"
+version = "0.0.1"
+authors = [
+  { name="Zhaoting Chen", email="ztchenustc@gmail.com" },
+]
+description = "A lightweight, partial, rewrite of 21CMMC"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "21cmFAST",
+    "nautilus-sampler",
+]
+
+
+#[project.urls]
+#Homepage = "https://github.com/zhaotingchen/meer21cm"
+#Issues = "https://github.com/zhaotingchen/meer21cm/issues"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-cov",
+]
+lint = [
+    "black",
+    "flake8",
+    "pre-commit",
+]
+docs = [
+    "sphinx",
+    "sphinx_rtd_theme",
+    "myst-parser",
+    "numpydoc",
+    "nbsphinx",
+    "ipykernel"
+]
+full = ["21cmmclite[test]","21cmmclite[lint]","21cmmclite[docs]"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.*"]
