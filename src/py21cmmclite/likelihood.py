@@ -98,16 +98,15 @@ class LikelihoodGaussian(LikelihoodBase):
         self.simulate_error_fraction = simulate_error_fraction
 
     def gather_data(self):
-        if self.simulate_data:
+        if self.simulate_data and self.data_dict["data_vector"] is None:
             # use default params to simulate data
             data_vec = np.array(self.gather_model()).ravel()
-            inv_cov = 1 / (np.diag(data_vec) * self.simulate_error_fraction) ** 2
-            return {
+            inv_cov = np.diag(1 / data_vec / self.simulate_error_fraction) ** 2
+            self.data_dict = {
                 "data_vector": data_vec,
                 "data_inv_covariance": inv_cov,
             }
-        else:
-            return self.data_dict
+        return self.data_dict
 
     def likelihood_function(self, model, data):
         model_vector = np.array(model).ravel()
