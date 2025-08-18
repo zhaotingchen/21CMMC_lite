@@ -150,11 +150,15 @@ class SamplerNautilus(SamplerBase):
         n_eff: int = 10000,
         save: bool = False,
         save_filename: str | None = None,
+        mp_backend: str = "multiprocessing",
+        nthreads: int = 1,
     ):
         self.n_live_points = n_live_points
         self.f_live = f_live
         self.n_shell = n_shell
         self.n_eff = n_eff
+        self.mp_backend = mp_backend
+        self.nthreads = nthreads
         super().__init__(
             params_name,
             init_pos,
@@ -174,6 +178,68 @@ class SamplerNautilus(SamplerBase):
                 dist = norm(loc=self.params_prior[i][1], scale=self.params_prior[i][2])
             prior.add_parameter(param_name, dist=dist)
         return prior
+
+    def log_likelihood(self, params_values):
+        log_likelihood = 0.0
+        blob = {}
+        for likelihood in self.likelihood:
+            pars_value_i = params_values[self.find_subset_for_likelihood(likelihood)]
+            log_likelihood_i, blob_i = likelihood.compute_likelihood(pars_value_i)
+            log_likelihood += log_likelihood_i
+            blob.update(blob_i)
+        # clear cache after computing likelihood
+        if self.clear_cache:
+            # if cosmology is fixed, only clear astro cache
+            self.clear_cache_for_one_params_set(
+                params_values,
+                only_astro=not self.is_varying_cosmo,
+            )
+        return log_likelihood, blob
+
+    def compute_log_likelihood(self, params_values):
+        ll, blob = self.log_likelihood(params_values)
+        blob_array = [arr.ravel() for arr in blob.values()]
+        blob_array = np.concatenate(blob_array)
+        return ll, blob_array
+
+    def run(self, continue_from_last: bool = True, verbose: bool = True):
+        pool = None
+        filepath = None
+        resume = continue_from_last
+        if self.mp_backend == "multiprocessing":
+            pool = self.nthreads
+        if self.save:
+            filepath = self.save_filename
+            file_exist = os.path.isfile(filepath)
+        if not self.save and continue_from_last:
+            raise UserWarning(
+                "continue_from_last is True but save is False, "
+                "so the sampler will not continue from the last position"
+            )
+            resume = False
+        elif self.save and not file_exist and continue_from_last:
+            raise UserWarning(
+                "continue_from_last is True but the file does not exist, "
+                "so the sampler will not continue from the last position"
+            )
+            resume = False
+        sampler = nautilus.Sampler(
+            self.get_nautilus_prior(),
+            self.compute_log_likelihood,
+            pass_dict=False,
+            pool=pool,
+            n_live=self.n_live_points,
+            resume=resume,
+            filepath=filepath,
+        )
+        sampler.run(
+            f_live=self.f_live,
+            n_shell=self.n_shell,
+            n_eff=self.n_eff,
+            discard_exploration=True,
+            verbose=verbose,
+        )
+        return sampler
 
 
 class SamplerEmcee(SamplerBase):
