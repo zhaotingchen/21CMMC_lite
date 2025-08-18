@@ -241,6 +241,18 @@ class SamplerNautilus(SamplerBase):
         )
         return sampler
 
+    def get_posterior(self):
+        if not self.save:
+            raise UserWarning("save is False, so the chain cannot be retrieved")
+        sampler = nautilus.Sampler(
+            self.get_nautilus_prior(),
+            self.compute_log_likelihood,
+            pass_dict=False,
+            filepath=self.save_filename,
+        )
+        points, log_w, log_l, blob = sampler.posterior(return_blobs=True)
+        return points, log_w, log_l, blob
+
 
 class SamplerEmcee(SamplerBase):
     """
