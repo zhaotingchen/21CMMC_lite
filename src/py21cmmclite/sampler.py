@@ -5,6 +5,7 @@ import numpy as np
 from multiprocessing import Pool
 from .coeval import EoRSimulator
 from py21cmfast.io.caching import OutputCache
+import os
 
 inputs_21cmfast = p21.InputParameters.from_template(
     "simple-small",
@@ -25,6 +26,7 @@ class SamplerBase:
         init_pos: list[float] | np.ndarray,
         params_prior: list[tuple[str, float, float]],
         likelihood: list[LikelihoodBase],
+        clear_cache: bool = True,
     ):
         self.params_name = params_name
         self.init_pos = init_pos
@@ -34,6 +36,7 @@ class SamplerBase:
                 "params_names, init_pos and params_prior must have the same length"
             )
         self.likelihood = likelihood
+        self.clear_cache = clear_cache
 
     @property
     def is_varying_astro(self):
@@ -71,7 +74,7 @@ class SamplerBase:
         ]
         return flag
 
-    def find_21cmfast_cache_files(self, params_values):
+    def find_21cmfast_cache_files(self, params_values, only_astro: bool = False):
         params_values = np.array(params_values)
         datasets = []
         for likelihood in self.likelihood:
@@ -81,8 +84,40 @@ class SamplerBase:
                     likelihood.get_update_dict(params_values[flag])
                 )
                 cache = OutputCache(direc=self.cache_dir)
-                datasets.extend(cache.list_datasets(inputs=inputs, all_seeds=False))
+                dataset_i = cache.list_datasets(inputs=inputs, all_seeds=False)
+                if only_astro:
+                    # change random params to change hash code
+                    # may be wrong
+                    inputs_alt = inputs.evolve_input_structs(
+                        F_ESC10=inputs.astro_params.F_ESC10 + 1,
+                    )
+                    dataset_i_alt = cache.list_datasets(
+                        inputs=inputs_alt, all_seeds=False
+                    )
+                    for dat in dataset_i_alt:
+                        if dat in dataset_i:
+                            dataset_i.remove(dat)
+                datasets.extend(dataset_i)
         return datasets
+
+    def clear_cache_for_one_params_set(self, params_values, only_astro: bool = False):
+        # if cosmology is fixed, only clear astro cache
+        datasets = self.find_21cmfast_cache_files(params_values, only_astro=only_astro)
+        for file in datasets:
+            os.remove(file)
+
+    def clear_empty_cache_subdir(self):
+        deleted = set()
+        for current_dir, subdirs, files in os.walk(self.cache_dir, topdown=False):
+            still_has_subdirs = False
+            for subdir in subdirs:
+                if os.path.join(current_dir, subdir) not in deleted:
+                    still_has_subdirs = True
+                    break
+            if not any(files) and not still_has_subdirs:
+                os.rmdir(current_dir)
+                deleted.add(current_dir)
+        return deleted
 
 
 class SamplerEmcee(SamplerBase):
@@ -102,8 +137,9 @@ class SamplerEmcee(SamplerBase):
         mp_backend: str = "multiprocessing",
         save: bool = False,
         save_filename: str | None = None,
+        clear_cache: bool = True,
     ):
-        super().__init__(params_name, init_pos, params_prior, likelihood)
+        super().__init__(params_name, init_pos, params_prior, likelihood, clear_cache)
         self.nwalkers = nwalkers
         self.nsteps = nsteps
         self.nthreads = nthreads
@@ -144,6 +180,13 @@ class SamplerEmcee(SamplerBase):
             log_likelihood_i, blob_i = likelihood.compute_likelihood(pars_value_i)
             log_likelihood += log_likelihood_i
             blob.update(blob_i)
+        # clear cache after computing likelihood
+        if self.clear_cache:
+            # if cosmology is fixed, only clear astro cache
+            self.clear_cache_for_one_params_set(
+                params_values,
+                only_astro=not self.is_varying_cosmo,
+            )
         return log_likelihood, blob
 
     def convert_blob_dict_to_array(self, blob_dict):
