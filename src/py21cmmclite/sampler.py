@@ -6,6 +6,8 @@ from multiprocessing import Pool
 from .coeval import EoRSimulator
 from py21cmfast.io.caching import OutputCache
 import os
+import nautilus
+from scipy.stats import norm
 
 inputs_21cmfast = p21.InputParameters.from_template(
     "simple-small",
@@ -27,6 +29,8 @@ class SamplerBase:
         params_prior: list[tuple[str, float, float]],
         likelihood: list[LikelihoodBase],
         clear_cache: bool = True,
+        save: bool = False,
+        save_filename: str | None = None,
     ):
         self.params_name = params_name
         self.init_pos = init_pos
@@ -37,6 +41,9 @@ class SamplerBase:
             )
         self.likelihood = likelihood
         self.clear_cache = clear_cache
+        self.save = save
+        self.save_filename = save_filename
+        self.validate_input()
 
     @property
     def is_varying_astro(self):
@@ -47,6 +54,8 @@ class SamplerBase:
         return any(param in cosmo_pars_21cmfast for param in self.params_name)
 
     def validate_input(self):
+        if self.save and self.save_filename is None:
+            raise ValueError("save_filename must be provided if save is True")
         cache_dir = None
         for likelihood in self.likelihood:
             flag = [param in self.params_name for param in likelihood.varied_params]
@@ -61,6 +70,9 @@ class SamplerBase:
                     if cache_dir != likelihood.cache_dir:
                         raise ValueError("cache_dir of likelihoods must be the same")
         self.cache_dir = cache_dir
+        for prior in self.params_prior:
+            if prior[0] not in ["uniform", "gaussian"]:
+                raise ValueError(f"Unsupported prior type: {prior[0]}")
 
     @property
     def ndim(self):
@@ -120,6 +132,50 @@ class SamplerBase:
         return deleted
 
 
+class SamplerNautilus(SamplerBase):
+    """
+    Sampler using Nautilus.
+    """
+
+    def __init__(
+        self,
+        params_name: list[str],
+        init_pos: list[float] | np.ndarray,
+        params_prior: list[tuple[str, float, float]],
+        likelihood: list[LikelihoodBase],
+        clear_cache: bool = True,
+        n_live_points: int = 2000,
+        f_live: float = 0.01,
+        n_shell: int = 1,
+        n_eff: int = 10000,
+        save: bool = False,
+        save_filename: str | None = None,
+    ):
+        self.n_live_points = n_live_points
+        self.f_live = f_live
+        self.n_shell = n_shell
+        self.n_eff = n_eff
+        super().__init__(
+            params_name,
+            init_pos,
+            params_prior,
+            likelihood,
+            clear_cache,
+            save,
+            save_filename,
+        )
+
+    def get_nautilus_prior(self):
+        prior = nautilus.Prior()
+        for i, param_name in enumerate(self.params_name):
+            if self.params_prior[i][0] == "uniform":
+                dist = (self.params_prior[i][1], self.params_prior[i][2])
+            elif self.params_prior[i][0] == "gaussian":
+                dist = norm(loc=self.params_prior[i][1], scale=self.params_prior[i][2])
+            prior.add_parameter(param_name, dist=dist)
+        return prior
+
+
 class SamplerEmcee(SamplerBase):
     """
     Sampler using emcee.
@@ -139,17 +195,20 @@ class SamplerEmcee(SamplerBase):
         save_filename: str | None = None,
         clear_cache: bool = True,
     ):
-        super().__init__(params_name, init_pos, params_prior, likelihood, clear_cache)
         self.nwalkers = nwalkers
         self.nsteps = nsteps
         self.nthreads = nthreads
         self.mp_backend = mp_backend
-        self.validate_input()
         self._blob_dtype = None
-        self.save = save
-        self.save_filename = save_filename
-        if self.save and self.save_filename is None:
-            raise ValueError("save_filename must be provided if save is True")
+        super().__init__(
+            params_name,
+            init_pos,
+            params_prior,
+            likelihood,
+            clear_cache,
+            save,
+            save_filename,
+        )
 
     def log_prior_gaussian(self, value, mean, sigma):
         return -0.5 * (value - mean) ** 2 / sigma**2
