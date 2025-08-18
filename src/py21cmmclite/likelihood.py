@@ -48,17 +48,24 @@ class LikelihoodBase:
         else:
             update_dict = self.get_update_dict(params_values)
         model_vector = []
+        blob_tot = {}
         for simulator in self.simulators:
-            model_vector.append(simulator.build_model_data(update_dict))
-        return model_vector
+            model, blob = simulator.build_model_data(update_dict)
+            additional_blob = simulator.build_blob_data(update_dict)
+            model_vector.append(model)
+            if blob is not None:
+                blob_tot.update(blob)
+            if additional_blob is not None:
+                blob_tot.update(additional_blob)
+        return model_vector, blob_tot
 
     def likelihood_function(self, model, data):
         pass
 
     def compute_likelihood(self, varied_params_values):
-        return self.likelihood_function(
-            self.gather_model(varied_params_values), self.gather_data()
-        )
+        model, blob = self.gather_model(varied_params_values)
+        ll = self.likelihood_function(model, self.gather_data())
+        return ll, blob
 
 
 class LikelihoodGaussian(LikelihoodBase):
@@ -100,7 +107,7 @@ class LikelihoodGaussian(LikelihoodBase):
     def gather_data(self):
         if self.simulate_data and self.data_dict["data_vector"] is None:
             # use default params to simulate data
-            data_vec = np.array(self.gather_model()).ravel()
+            data_vec = np.array(self.gather_model()[0]).ravel()
             inv_cov = np.diag(1 / data_vec / self.simulate_error_fraction) ** 2
             self.data_dict = {
                 "data_vector": data_vec,
@@ -132,6 +139,8 @@ class LikelihoodNeutralFraction(EoRSimulator, LikelihoodGaussian):
         data_dict: dict | None = None,
         simulate_data: bool = False,
         simulate_error_fraction: float = 0.1,
+        save_global_xhi: bool = False,
+        save_xhi_box: bool = False,
     ):
         EoRSimulator.__init__(
             self, inputs_21cmfast, cache_dir, regenerate, global_params
@@ -140,6 +149,8 @@ class LikelihoodNeutralFraction(EoRSimulator, LikelihoodGaussian):
             self, varied_params, data_dict, simulate_data, simulate_error_fraction
         )
         self.redshifts = redshifts
+        self.save_global_xhi = save_global_xhi
+        self.save_xhi_box = save_xhi_box
         self.simulators = [
             CoevalNeutralFraction(
                 redshifts=redshifts,
@@ -147,5 +158,7 @@ class LikelihoodNeutralFraction(EoRSimulator, LikelihoodGaussian):
                 cache_dir=cache_dir,
                 regenerate=regenerate,
                 global_params=global_params,
+                save_global_xhi=save_global_xhi,
+                save_xhi_box=save_xhi_box,
             )
         ]

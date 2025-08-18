@@ -23,6 +23,9 @@ class BaseSimulator:
     def simulate(self, update_params: dict = {}):
         pass
 
+    def build_blob_data(self, update_params: dict = {}):
+        pass
+
 
 class EoRSimulator(BaseSimulator):
     """
@@ -48,6 +51,9 @@ class EoRSimulator(BaseSimulator):
         pass
 
     def simulate(self, update_params: dict = {}):
+        pass
+
+    def build_blob_data(self, update_params: dict = {}):
         pass
 
 
@@ -89,6 +95,20 @@ class CoevalNeutralFraction(CoevalSimulator):
     Simulate the coeval cubes and calculate the 1DPS.
     """
 
+    def __init__(
+        self,
+        redshifts: list[float] | np.ndarray,
+        inputs: p21.InputParameters,
+        cache_dir: str,
+        regenerate: bool = False,
+        global_params: dict | None = None,
+        save_global_xhi: bool = False,
+        save_xhi_box: bool = False,
+    ):
+        super().__init__(redshifts, inputs, cache_dir, regenerate, global_params)
+        self.save_global_xhi = save_global_xhi
+        self.save_xhi_box = save_xhi_box
+
     def build_model_data(self, update_params: dict = {}):
         inputs = self.get_update_input(update_params)
         xhibox = [p21.IonizedBox.new(redshift=z, inputs=inputs) for z in self.redshifts]
@@ -97,4 +117,9 @@ class CoevalNeutralFraction(CoevalSimulator):
             p21.io.h5.read_output_struct(cache.find_existing(path)) for path in xhibox
         ]
         global_xhi = [xhi.get("neutral_fraction").mean() for xhi in xhibox]
-        return global_xhi
+        blob = {}
+        if self.save_global_xhi:
+            blob["global_xhi_coeval"] = global_xhi
+        if self.save_xhi_box:
+            blob["xhi_box_coeval"] = [xhi.get("neutral_fraction") for xhi in xhibox]
+        return global_xhi, blob
