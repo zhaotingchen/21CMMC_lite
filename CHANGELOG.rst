@@ -1,6 +1,11 @@
 Changelog
 =========
 
+dev
+---
+
+- Add MPI support for emcee and nautilus
+
 v0.0.1 [18 Aug 2025]
 ----------------------
 

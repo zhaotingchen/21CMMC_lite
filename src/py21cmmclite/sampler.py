@@ -208,6 +208,10 @@ class SamplerNautilus(SamplerBase):
         resume = continue_from_last
         if self.mp_backend == "multiprocessing":
             pool = self.nthreads
+        elif self.mp_backend == "mpi":
+            from mpi4py.futures import MPIPoolExecutor
+
+            pool = MPIPoolExecutor(self.nthreads)
         if self.save:
             filepath = self.save_filename
             file_exist = os.path.isfile(filepath)
@@ -392,8 +396,13 @@ class SamplerEmcee(SamplerBase):
             nsteps = nsteps - backend.iteration
         else:
             backend = None
+        pool = None
         if self.mp_backend == "multiprocessing":
             pool = Pool(self.nthreads)
+        elif self.mp_backend == "mpi":
+            from schwimmbad import MPIPool
+
+            pool = MPIPool(self.nthreads)
         sampler = emcee.EnsembleSampler(
             self.nwalkers,
             self.ndim,

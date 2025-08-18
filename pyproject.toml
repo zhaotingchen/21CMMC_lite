@@ -20,6 +20,8 @@ dependencies = [
     "21cmFAST",
     "nautilus-sampler",
     "emcee",
+    "mpi4py",
+    "schwimmbad",
 ]
 
 
