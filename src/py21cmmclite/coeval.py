@@ -119,7 +119,9 @@ class CoevalNeutralFraction(CoevalSimulator):
         global_xhi = [xhi.get("neutral_fraction").mean() for xhi in xhibox]
         blob = {}
         if self.save_global_xhi:
-            blob["global_xhi_coeval"] = global_xhi
+            blob["global_xhi_coeval"] = np.array(global_xhi)
         if self.save_xhi_box:
-            blob["xhi_box_coeval"] = [xhi.get("neutral_fraction") for xhi in xhibox]
+            blob["xhi_box_coeval"] = np.array(
+                [xhi.get("neutral_fraction") for xhi in xhibox]
+            )
         return global_xhi, blob
