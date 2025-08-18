@@ -1,4 +1,4 @@
-from .coeval import CoevalNeutralFraction, BaseSimulator
+from .coeval import CoevalNeutralFraction, EoRSimulator
 import numpy as np
 import py21cmfast as p21
 
@@ -9,24 +9,17 @@ def compute_chi2(model_vector, data_vector, inv_covariance):
     return chi2
 
 
-class LikelihoodBase(BaseSimulator):
+class LikelihoodBase:
     """
     Base class for constructing likelihoods.
     """
 
     def __init__(
         self,
-        inputs_21cmfast: p21.InputParameters,
         varied_params: list[str],
-        cache_dir: str,
-        regenerate: bool = False,
-        global_params: dict | None = None,
-        data_dict: dict | None = None,
     ):
-        super().__init__(inputs_21cmfast, cache_dir, regenerate, global_params)
         self.varied_params = varied_params
         self.simulators = []
-        self.data_dict = data_dict
 
     def get_update_dict(self, varied_params_values):
         if not len(varied_params_values) == len(self.varied_params):
@@ -37,13 +30,13 @@ class LikelihoodBase(BaseSimulator):
         }
         return update_params
 
+    def gather_data(self):
+        pass
+
     def invoke_simulators(self, params_values=None):
         if params_values is None:
             update_dict = {}
         else:
-            assert len(params_values) == len(
-                self.varied_params
-            ), "input values must have the same length as varied_params"
             update_dict = self.get_update_dict(params_values)
         for simulator in self.simulators:
             simulator.simulate(update_dict)
@@ -58,9 +51,6 @@ class LikelihoodBase(BaseSimulator):
         for simulator in self.simulators:
             model_vector.append(simulator.build_model_data(update_dict))
         return model_vector
-
-    def gather_data(self):
-        pass
 
     def likelihood_function(self, model, data):
         pass
@@ -78,18 +68,12 @@ class LikelihoodGaussian(LikelihoodBase):
 
     def __init__(
         self,
-        inputs_21cmfast: p21.InputParameters,
         varied_params: list[str],
-        cache_dir: str,
-        regenerate: bool = False,
-        global_params: dict | None = None,
         data_dict: dict | None = None,
         simulate_data: bool = False,
         simulate_error_fraction: float = 0.1,
     ):
-        super().__init__(
-            inputs_21cmfast, varied_params, cache_dir, regenerate, global_params
-        )
+        super().__init__(varied_params)
         if data_dict is None:
             data_vector = None
             data_inv_covariance = None
@@ -133,7 +117,7 @@ class LikelihoodGaussian(LikelihoodBase):
         return -0.5 * chi2
 
 
-class LikelihoodNeutralFraction(LikelihoodGaussian):
+class LikelihoodNeutralFraction(EoRSimulator, LikelihoodGaussian):
     """
     Likelihood for neutral fraction.
     """
@@ -150,21 +134,17 @@ class LikelihoodNeutralFraction(LikelihoodGaussian):
         simulate_data: bool = False,
         simulate_error_fraction: float = 0.1,
     ):
-        super().__init__(
-            inputs_21cmfast,
-            varied_params,
-            cache_dir,
-            regenerate,
-            global_params,
-            data_dict,
-            simulate_data,
-            simulate_error_fraction,
+        EoRSimulator.__init__(
+            self, inputs_21cmfast, cache_dir, regenerate, global_params
+        )
+        LikelihoodGaussian.__init__(
+            self, varied_params, data_dict, simulate_data, simulate_error_fraction
         )
         self.redshifts = redshifts
         self.simulators = [
             CoevalNeutralFraction(
                 redshifts=redshifts,
-                inputs_21cmfast=inputs_21cmfast,
+                inputs=inputs_21cmfast,
                 cache_dir=cache_dir,
                 regenerate=regenerate,
                 global_params=global_params,

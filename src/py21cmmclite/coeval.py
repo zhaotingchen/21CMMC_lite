@@ -8,26 +8,50 @@ logger = logging.getLogger("21cmFAST")
 
 class BaseSimulator:
     """
-    Base class for constructing simulators and likelihoods.
+    Base class for all simulators.
     """
 
     def __init__(
         self,
-        inputs_21cmfast: p21.InputParameters,
+        inputs,
+    ):
+        self.inputs = inputs
+
+    def build_model_data(self, update_params: dict = {}):
+        pass
+
+    def simulate(self, update_params: dict = {}):
+        pass
+
+
+class EoRSimulator(BaseSimulator):
+    """
+    Base class for constructing simulators of EoR using 21cmFAST.
+    """
+
+    def __init__(
+        self,
+        inputs: p21.InputParameters,
         cache_dir: str,
         regenerate: bool = False,
         global_params: dict | None = None,
     ):
-        self.inputs_21cmfast = inputs_21cmfast
+        super().__init__(inputs)
         self.cache_dir = cache_dir
         self.regenerate = regenerate
         self.global_params = global_params or {}
 
     def get_update_input(self, update_dict: dict):
-        return self.inputs_21cmfast.evolve_input_structs(**update_dict)
+        return self.inputs.evolve_input_structs(**update_dict)
+
+    def build_model_data(self, update_params: dict = {}):
+        pass
+
+    def simulate(self, update_params: dict = {}):
+        pass
 
 
-class CoevalSimulator(BaseSimulator):
+class CoevalSimulator(EoRSimulator):
     """
     Basic simulator for coeval cubes.
     """
@@ -35,12 +59,12 @@ class CoevalSimulator(BaseSimulator):
     def __init__(
         self,
         redshifts: list[float] | np.ndarray,
-        inputs_21cmfast: p21.InputParameters,
+        inputs: p21.InputParameters,
         cache_dir: str,
         regenerate: bool = False,
         global_params: dict | None = None,
     ):
-        super().__init__(inputs_21cmfast, cache_dir, regenerate, global_params)
+        super().__init__(inputs, cache_dir, regenerate, global_params)
         self.redshifts = redshifts
 
     def simulate(self, update_params: dict = {}):
@@ -58,9 +82,6 @@ class CoevalSimulator(BaseSimulator):
             **self.global_params,
         )
         return 1.0
-
-    def build_model_data(self, update_params: dict = {}):
-        pass
 
 
 class CoevalNeutralFraction(CoevalSimulator):
