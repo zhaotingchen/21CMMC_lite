@@ -199,8 +199,11 @@ class SamplerNautilus(SamplerBase):
     def compute_log_likelihood(self, params_values):
         ll, blob = self.log_likelihood(params_values)
         blob_array = [arr.ravel() for arr in blob.values()]
-        blob_array = np.concatenate(blob_array)
-        return ll, blob_array
+        if blob_array != []:
+            blob_array = np.concatenate(blob_array)
+            return ll, blob_array
+        else:
+            return ll
 
     def run(self, continue_from_last: bool = True, verbose: bool = True):
         pool = None
@@ -364,11 +367,17 @@ class SamplerEmcee(SamplerBase):
         lp = self.log_prior(params_values)
         # no need to compute if already out of prior range
         if not np.isfinite(lp):
-            return lp, np.zeros(self.blob_size) + np.nan
+            if self.blob_size > 0:
+                return lp, np.zeros(self.blob_size) + np.nan
+            else:
+                return lp
         ll, blob = self.log_likelihood(params_values)
         blob_array = [arr.ravel() for arr in blob.values()]
-        blob_array = np.concatenate(blob_array)
-        return ll + lp, blob_array
+        if blob_array != []:
+            blob_array = np.concatenate(blob_array)
+            return ll + lp, blob_array
+        else:
+            return ll + lp
 
     def run(self, continue_from_last: bool = True, progress: bool = True):
         if self._blob_dtype is None:
@@ -385,9 +394,14 @@ class SamplerEmcee(SamplerBase):
         if continue_from_last and self.save:
             start_coord = None
         else:
+            # TODO: need smarter init position
             start_coord = (
                 1 + np.random.uniform(-1e-2, 1e-2, size=(self.nwalkers, self.ndim))
-            ) * self.init_pos[None, :]
+            ) * self.init_pos[None, :] + np.random.uniform(
+                0, 1e-2, size=(self.nwalkers, self.ndim)
+            ) * (
+                np.abs(self.init_pos[None, :]) < 1e-2
+            )
         nsteps = self.nsteps
         if self.save:
             backend = emcee.backends.HDFBackend(self.save_filename)
