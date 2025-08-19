@@ -137,4 +137,9 @@ class LightconeNeutralFraction(LightconeSimulator):
                 (z_lc >= self.xhi_z_edges_low[i]) & (z_lc <= self.xhi_z_edges_high[i])
             )[0]
             xhi_points.append(np.mean(xhi_lc[:, :, z_sel]))
-        return xhi_points
+        blob = {}
+        if self.save_xhi_points:
+            blob["xhi_points_lc"] = np.array(xhi_points)
+        if self.save_xhi_lc:
+            blob["xhi_lc"] = np.array(xhi_lc)
+        return xhi_points, blob
