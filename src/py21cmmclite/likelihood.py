@@ -123,7 +123,7 @@ class LikelihoodGaussian(LikelihoodBase):
         return -0.5 * chi2
 
 
-class LikelihoodNeutralFraction(EoRSimulator, LikelihoodGaussian):
+class LikelihoodCoevalNeutralFraction(EoRSimulator, LikelihoodGaussian):
     """
     Likelihood for neutral fraction.
     """
