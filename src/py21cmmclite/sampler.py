@@ -194,6 +194,7 @@ class SamplerNautilus(SamplerBase):
                 params_values,
                 only_astro=not self.is_varying_cosmo,
             )
+            self.clear_empty_cache_subdir()
         return log_likelihood, blob
 
     def compute_log_likelihood(self, params_values):
@@ -331,6 +332,7 @@ class SamplerEmcee(SamplerBase):
                 params_values,
                 only_astro=not self.is_varying_cosmo,
             )
+            self.clear_empty_cache_subdir()
         return log_likelihood, blob
 
     def convert_blob_dict_to_array(self, blob_dict):
