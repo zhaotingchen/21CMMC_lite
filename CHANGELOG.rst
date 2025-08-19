@@ -4,7 +4,16 @@ Changelog
 dev
 ---
 
+Added
+~~~~~
+
 - Add MPI support for emcee and nautilus
+- A simple lightcone simulator that can be used to simulate the lightcone and calculate the global neutral fraction
+
+Fixed
+~~~~~
+
+- Fixed a bug when no blob is returned in the sampler
 
 v0.0.1 [18 Aug 2025]
 ----------------------

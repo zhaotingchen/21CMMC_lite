@@ -92,7 +92,7 @@ class CoevalSimulator(EoRSimulator):
 
 class CoevalNeutralFraction(CoevalSimulator):
     """
-    Simulate the coeval cubes and calculate the 1DPS.
+    Simulate the coeval cubes and calculate the global neutral fraction.
     """
 
     def __init__(
