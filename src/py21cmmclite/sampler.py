@@ -8,6 +8,7 @@ from py21cmfast.io.caching import OutputCache
 import os
 import nautilus
 from scipy.stats import norm
+from .lightcone import get_lc_file_path, LightconeSimulator
 
 inputs_21cmfast = p21.InputParameters.from_template(
     "simple-small",
@@ -110,6 +111,11 @@ class SamplerBase:
                         if dat in dataset_i:
                             dataset_i.remove(dat)
                 datasets.extend(dataset_i)
+            for sim in likelihood.simulators:
+                if isinstance(sim, LightconeSimulator):
+                    lc_file_path = get_lc_file_path(self.cache_dir, inputs)
+                    datasets.append(lc_file_path)
+                    break
         return datasets
 
     def clear_cache_for_one_params_set(self, params_values, only_astro: bool = False):

@@ -4,11 +4,29 @@ import py21cmfast as p21
 from py21cmfast.io.caching import OutputCache
 from .coeval import EoRSimulator
 import hashlib
-import re
 import os
 import h5py
 
 logger = logging.getLogger("21cmFAST")
+
+
+def get_lc_file_path(cache_dir: str, inputs: p21.InputParameters):
+    cache = OutputCache(cache_dir)
+    datasets = cache.list_datasets(
+        inputs=inputs,
+        all_seeds=False,
+        redshift=inputs.node_redshifts[0],
+    )
+    file_path = [x for x in datasets if "BrightnessTemp" in str(x)]
+    if len(file_path) == 0:
+        return None
+    assert len(file_path) == 1, f"Multiple files found for {inputs.node_redshifts[0]}"
+    file_path = str(file_path[0])
+    h = hashlib.new("sha256")
+    h.update(str(inputs.node_redshifts).encode())
+    lc_id = h.hexdigest()
+    file_path = file_path.replace("BrightnessTemp", f"Lightcone_{lc_id}")
+    return file_path
 
 
 class LightconeSimulator(EoRSimulator):
@@ -35,30 +53,10 @@ class LightconeSimulator(EoRSimulator):
             self.lc_max_redshift = np.max(inputs.node_redshifts)
         self.lc_quantities = lc_quantities
 
-    def get_lc_file_path(self, inputs: p21.InputParameters):
-        cache = OutputCache(self.cache_dir)
-        datasets = cache.list_datasets(
-            inputs=inputs,
-            all_seeds=False,
-            redshift=inputs.node_redshifts[0],
-        )
-        file_path = [x for x in datasets if "BrightnessTemp" in str(x)]
-        if len(file_path) == 0:
-            return None
-        assert (
-            len(file_path) == 1
-        ), f"Multiple files found for {inputs.node_redshifts[0]}"
-        file_path = str(file_path[0])
-        h = hashlib.new("sha256")
-        h.update(str(inputs.node_redshifts).encode())
-        lc_id = h.hexdigest()
-        file_path = file_path.replace("BrightnessTemp", f"Lightcone_{lc_id}")
-        return file_path
-
     def simulate(self, update_params: dict = {}):
         inputs = self.get_update_input(update_params)
         # try to see if lightcone file exists
-        lc_file_path = self.get_lc_file_path(inputs)
+        lc_file_path = get_lc_file_path(self.cache_dir, inputs)
         if lc_file_path is not None:
             if os.path.exists(lc_file_path):
                 return 1.0
@@ -77,7 +75,7 @@ class LightconeSimulator(EoRSimulator):
             cache=cache,
         )
         # re-obtain the file path
-        lc_file_path = self.get_lc_file_path(inputs)
+        lc_file_path = get_lc_file_path(self.cache_dir, inputs)
         lc.save(lc_file_path, clobber=True)
         with h5py.File(lc_file_path, "a") as f:
             f.create_dataset("lightcone_redshifts", data=lc.lightcone_redshifts)
@@ -125,7 +123,7 @@ class LightconeNeutralFraction(LightconeSimulator):
 
     def build_model_data(self, update_params: dict = {}):
         inputs = self.get_update_input(update_params)
-        lc_file_path = self.get_lc_file_path(inputs)
+        lc_file_path = get_lc_file_path(self.cache_dir, inputs)
         if not os.path.exists(lc_file_path):
             raise FileNotFoundError(f"Lightcone file not found: {lc_file_path}")
         with h5py.File(lc_file_path, "r") as f:
