@@ -116,26 +116,27 @@ class SamplerBase:
                     lc_file_path = get_lc_file_path(self.cache_dir, inputs)
                     datasets.append(lc_file_path)
                     break
-        return datasets
+            # convert to string
+            datasets = [str(data) for data in datasets]
+            # find file paths
+            file_path = [data[: data.rfind("/")] for data in datasets]
+            file_path = np.unique(file_path)
+        return datasets, file_path
 
     def clear_cache_for_one_params_set(self, params_values, only_astro: bool = False):
         # if cosmology is fixed, only clear astro cache
-        datasets = self.find_21cmfast_cache_files(params_values, only_astro=only_astro)
+        datasets, file_path = self.find_21cmfast_cache_files(
+            params_values, only_astro=only_astro
+        )
         for file in datasets:
             os.remove(file)
+        self.clear_empty_cache_subdir(file_path)
 
-    def clear_empty_cache_subdir(self):
-        deleted = set()
-        for current_dir, subdirs, files in os.walk(self.cache_dir, topdown=False):
-            still_has_subdirs = False
-            for subdir in subdirs:
-                if os.path.join(current_dir, subdir) not in deleted:
-                    still_has_subdirs = True
-                    break
-            if not any(files) and not still_has_subdirs:
-                os.rmdir(current_dir)
-                deleted.add(current_dir)
-        return deleted
+    def clear_empty_cache_subdir(self, file_path):
+        for file in file_path:
+            if os.path.isdir(file):
+                if os.listdir(file) == []:
+                    os.rmdir(file)
 
 
 class SamplerNautilus(SamplerBase):
