@@ -9,6 +9,8 @@ import os
 import nautilus
 from scipy.stats import norm
 from .lightcone import get_lc_file_path, LightconeSimulator
+import glob
+import shutil
 
 inputs_21cmfast = p21.InputParameters.from_template(
     "simple-small",
@@ -54,6 +56,7 @@ class SamplerBase:
     def is_varying_cosmo(self):
         return any(param in cosmo_pars_21cmfast for param in self.params_name)
 
+    # TODO: check input parameter consistency. check if lc_quantity match the required model statistics
     def validate_input(self):
         if self.save and self.save_filename is None:
             raise ValueError("save_filename must be provided if save is True")
@@ -124,13 +127,26 @@ class SamplerBase:
         return datasets, file_path
 
     def clear_cache_for_one_params_set(self, params_values, only_astro: bool = False):
+        # return 1.0
         # if cosmology is fixed, only clear astro cache
         datasets, file_path = self.find_21cmfast_cache_files(
             params_values, only_astro=only_astro
         )
         for file in datasets:
-            os.remove(file)
+            if os.path.isfile(file):
+                # print(file)
+                os.remove(file)
         self.clear_empty_cache_subdir(file_path)
+
+    def clear_astro_cache(self):
+        for likelihood in self.likelihood:
+            if isinstance(likelihood, EoRSimulator):
+                random_seed = likelihood.inputs.random_seed
+                file_list = glob.glob(f"cache/*/{random_seed}/*/*/*/*")
+                file_list = np.unique([file[: file.rfind("/")] for file in file_list])
+                for file in file_list:
+                    if os.path.isdir(file):
+                        shutil.rmtree(file)
 
     def clear_empty_cache_subdir(self, file_path):
         for file in file_path:
@@ -217,11 +233,11 @@ class SamplerNautilus(SamplerBase):
         filepath = None
         resume = continue_from_last
         if self.mp_backend == "multiprocessing":
-            pool = self.nthreads
+            pool_func = Pool
         elif self.mp_backend == "mpi":
             from mpi4py.futures import MPIPoolExecutor
 
-            pool = MPIPoolExecutor(self.nthreads)
+            pool_func = MPIPoolExecutor
         if self.save:
             filepath = self.save_filename
             file_exist = os.path.isfile(filepath)
@@ -237,22 +253,23 @@ class SamplerNautilus(SamplerBase):
                 "so the sampler will not continue from the last position"
             )
             resume = False
-        sampler = nautilus.Sampler(
-            self.get_nautilus_prior(),
-            self.compute_log_likelihood,
-            pass_dict=False,
-            pool=pool,
-            n_live=self.n_live_points,
-            resume=resume,
-            filepath=filepath,
-        )
-        sampler.run(
-            f_live=self.f_live,
-            n_shell=self.n_shell,
-            n_eff=self.n_eff,
-            discard_exploration=True,
-            verbose=verbose,
-        )
+        with pool_func(self.nthreads) as pool:
+            sampler = nautilus.Sampler(
+                self.get_nautilus_prior(),
+                self.compute_log_likelihood,
+                pass_dict=False,
+                pool=pool,
+                n_live=self.n_live_points,
+                resume=resume,
+                filepath=filepath,
+            )
+            sampler.run(
+                f_live=self.f_live,
+                n_shell=self.n_shell,
+                n_eff=self.n_eff,
+                discard_exploration=True,
+                verbose=verbose,
+            )
         return sampler
 
     def get_posterior(self):
@@ -286,12 +303,14 @@ class SamplerEmcee(SamplerBase):
         save: bool = False,
         save_filename: str | None = None,
         clear_cache: bool = True,
+        clear_cache_after_some_steps: int | None = None,
     ):
         self.nwalkers = nwalkers
         self.nsteps = nsteps
         self.nthreads = nthreads
         self.mp_backend = mp_backend
         self._blob_dtype = None
+        self.clear_cache_after_some_steps = clear_cache_after_some_steps
         super().__init__(
             params_name,
             init_pos,
@@ -301,6 +320,8 @@ class SamplerEmcee(SamplerBase):
             save,
             save_filename,
         )
+        if self.clear_cache_after_some_steps is not None:
+            self.clear_cache = False
 
     def log_prior_gaussian(self, value, mean, sigma):
         return -0.5 * (value - mean) ** 2 / sigma**2
@@ -412,26 +433,58 @@ class SamplerEmcee(SamplerBase):
         nsteps = self.nsteps
         if self.save:
             backend = emcee.backends.HDFBackend(self.save_filename)
-            if not continue_from_last:
-                backend.reset(self.nwalkers, self.ndim)
-            nsteps = nsteps - backend.iteration
+            if os.path.isfile(self.save_filename):
+                if not continue_from_last and backend.iteration > 0:
+                    backend.reset(self.nwalkers, self.ndim)
+                nsteps = nsteps - backend.iteration
         else:
             backend = None
         pool = None
         if self.mp_backend == "multiprocessing":
-            pool = Pool(self.nthreads)
+            pool_func = Pool
         elif self.mp_backend == "mpi":
-            from schwimmbad import MPIPool
+            # from schwimmbad import choose_pool
+            # pool_func = lambda x: choose_pool(mpi=True, processes=x)
+            from mpi4py.futures import MPIPoolExecutor
 
-            pool = MPIPool(self.nthreads)
-        sampler = emcee.EnsembleSampler(
-            self.nwalkers,
-            self.ndim,
-            self.compute_log_likelihood,
-            backend=backend,
-            pool=pool,
-        )
-        sampler.run_mcmc(start_coord, nsteps, progress=progress)
+            pool_func = MPIPoolExecutor
+        with pool_func(self.nthreads) as pool:
+            sampler = emcee.EnsembleSampler(
+                self.nwalkers,
+                self.ndim,
+                self.compute_log_likelihood,
+                backend=backend,
+                pool=pool,
+            )
+            if self.clear_cache_after_some_steps is None:
+                reset_steps = nsteps
+            else:
+                reset_steps = self.clear_cache_after_some_steps
+            for i in range(0, max(1, nsteps // reset_steps)):
+                if i > 0:
+                    start_coord = None
+                sampler.run_mcmc(start_coord, reset_steps, progress=progress)
+                chain = sampler.get_chain()
+                n_iter = chain.shape[0]
+                chain = chain[-reset_steps:].reshape((-1, sampler.ndim))
+                if self.clear_cache_after_some_steps is not None:
+                    for pars in chain:
+                        self.clear_cache_for_one_params_set(
+                            pars,
+                            only_astro=not self.is_varying_cosmo,
+                        )
+                    # self.clear_astro_cache()
+            if n_iter < self.nsteps:
+                sampler.run_mcmc(start_coord, self.nsteps - n_iter, progress=progress)
+                chain = sampler.get_chain()
+                n_iter = chain.shape[0]
+                chain = chain[-(self.nsteps - n_iter) :].reshape((-1, sampler.ndim))
+                for pars in chain:
+                    self.clear_cache_for_one_params_set(
+                        pars,
+                        only_astro=not self.is_varying_cosmo,
+                    )
+                # self.clear_astro_cache()
         return sampler
 
     def get_chain(self):

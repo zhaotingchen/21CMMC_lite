@@ -6,6 +6,8 @@ from .coeval import EoRSimulator
 import hashlib
 import os
 import h5py
+from scipy.interpolate import InterpolatedUnivariateSpline
+from py21cmfast import wrapper as lib
 
 logger = logging.getLogger("21cmFAST")
 
@@ -80,6 +82,90 @@ class LightconeSimulator(EoRSimulator):
         with h5py.File(lc_file_path, "a") as f:
             f.create_dataset("lightcone_redshifts", data=lc.lightcone_redshifts)
         return 1.0
+
+
+class LightconeCMBTau(LightconeSimulator):
+    """
+    Simulate the lightcone and calcualte the CMB optical depth.
+    """
+
+    def __init__(
+        self,
+        inputs: p21.InputParameters,
+        cache_dir: str,
+        regenerate: bool = False,
+        global_params: dict | None = None,
+        lc_min_redshift: float | None = None,
+        lc_max_redshift: float | None = None,
+        lc_quantities: list[str] = ["brightness_temp", "neutral_fraction"],
+        save_global_xhi: bool = False,
+        save_tau_value: bool = False,
+        use_node_boxes: bool = True,
+        use_lightcone: bool = False,
+        z_extrap_min: float = 5,
+        z_extrap_max: float = 25,
+        n_z_interp: int = 41,
+    ):
+        super().__init__(
+            inputs,
+            cache_dir,
+            regenerate,
+            global_params,
+            lc_min_redshift,
+            lc_max_redshift,
+            lc_quantities,
+        )
+        self.save_global_xhi = save_global_xhi
+        self.save_tau_value = save_tau_value
+        self.use_node_boxes = use_node_boxes
+        self.use_lightcone = use_lightcone
+        self.z_extrap_min = z_extrap_min
+        self.z_extrap_max = z_extrap_max
+        self.n_z_interp = n_z_interp
+        if self.use_node_boxes == self.use_lightcone:
+            raise ValueError("use_node_boxes and use_lightcone cannot be the same")
+
+    @property
+    def z_interp_arr(self):
+        return np.linspace(self.z_extrap_min, self.z_extrap_max, self.n_z_interp)
+
+    def build_model_data(self, update_params: dict = {}):
+        inputs = self.get_update_input(update_params)
+        if self.use_node_boxes:
+            redshifts = inputs.node_redshifts
+            cache = OutputCache(self.cache_dir)
+            xhibox = [p21.IonizedBox.new(redshift=z, inputs=inputs) for z in redshifts]
+            xhibox = [
+                p21.io.h5.read_output_struct(cache.find_existing(path))
+                for path in xhibox
+            ]
+            global_xhi = [xhi.get("neutral_fraction").mean() for xhi in xhibox]
+        elif self.use_lightcone:
+            lc_file_path = get_lc_file_path(self.cache_dir, inputs)
+            if not os.path.exists(lc_file_path):
+                raise FileNotFoundError(f"Lightcone file not found: {lc_file_path}")
+            with h5py.File(lc_file_path, "r") as f:
+                global_xhi = np.array(f["lightcones"]["neutral_fraction"]).mean(
+                    axis=(0, 1)
+                )
+                redshifts = np.array(f["lightcone_redshifts"])
+        # Order the redshifts in increasing order
+        redshifts, global_xhi = np.sort(np.array([redshifts, global_xhi]))
+        neutral_frac_func = InterpolatedUnivariateSpline(redshifts, global_xhi, k=1)
+        global_xhi = neutral_frac_func(self.z_interp_arr)
+        # Ensure that the neutral fraction does not exceed unity, or go negative
+        np.clip(global_xhi, 0, 1, global_xhi)
+        tau_value = lib.cfuncs.compute_tau(
+            inputs=inputs,
+            redshifts=self.z_interp_arr,
+            global_xHI=global_xhi,
+        )
+        blob = {}
+        if self.save_global_xhi:
+            blob["global_xhi_interp"] = np.array(global_xhi)
+        if self.save_tau_value:
+            blob["cmb_tau"] = np.array(tau_value)
+        return tau_value, blob
 
 
 class LightconeNeutralFraction(LightconeSimulator):

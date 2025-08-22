@@ -1,13 +1,15 @@
+from re import S
 from .coeval import CoevalNeutralFraction, EoRSimulator
 import numpy as np
 import py21cmfast as p21
-from .lightcone import LightconeNeutralFraction
+from .lightcone import LightconeNeutralFraction, LightconeCMBTau
 
 
 def compute_chi2(model_vector, data_vector, inv_covariance):
     diff = np.array(model_vector - data_vector).ravel()
     chi2 = np.dot(diff, np.dot(inv_covariance, diff))
-    return chi2
+    chi2 = np.ravel(chi2)
+    return float(chi2[0])
 
 
 class LikelihoodBase:
@@ -214,5 +216,72 @@ class LikelihoodLightconeNeutralFraction(EoRSimulator, LikelihoodGaussian):
                 lc_quantities=lc_quantities,
                 save_xhi_points=save_xhi_points,
                 save_xhi_lc=save_xhi_lc,
+            )
+        ]
+
+
+class LikelihoodLightconeCMBTau(EoRSimulator, LikelihoodGaussian):
+    """
+    Likelihood for CMB optical depth.
+    """
+
+    def __init__(
+        self,
+        inputs_21cmfast: p21.InputParameters,
+        cache_dir: str,
+        varied_params: list[str],
+        data_dict: dict | None = None,
+        simulate_data: bool = False,
+        simulate_error_fraction: float = 0.1,
+        regenerate: bool = False,
+        global_params: dict | None = None,
+        lc_min_redshift: float | None = None,
+        lc_max_redshift: float | None = None,
+        lc_quantities: list[str] = ["brightness_temp", "neutral_fraction"],
+        save_global_xhi: bool = False,
+        save_tau_value: bool = False,
+        use_node_boxes: bool = True,
+        use_lightcone: bool = False,
+        z_extrap_min: float = 5,
+        z_extrap_max: float = 25,
+        n_z_interp: int = 41,
+    ):
+        EoRSimulator.__init__(
+            self, inputs_21cmfast, cache_dir, regenerate, global_params
+        )
+        LikelihoodGaussian.__init__(
+            self, varied_params, data_dict, simulate_data, simulate_error_fraction
+        )
+        # for CMB tau, if no input data default should be Planck prior
+        if data_dict is None:
+            # 1908.09856
+            self.data_dict["data_vector"] = np.array([0.059])
+            self.data_dict["data_inv_covariance"] = 1 / (np.array([0.006]) ** 2)
+        self.lc_min_redshift = lc_min_redshift
+        self.lc_max_redshift = lc_max_redshift
+        self.lc_quantities = lc_quantities
+        self.save_global_xhi = save_global_xhi
+        self.save_tau_value = save_tau_value
+        self.use_node_boxes = use_node_boxes
+        self.use_lightcone = use_lightcone
+        self.z_extrap_min = z_extrap_min
+        self.z_extrap_max = z_extrap_max
+        self.n_z_interp = n_z_interp
+        self.simulators = [
+            LightconeCMBTau(
+                inputs=inputs_21cmfast,
+                cache_dir=cache_dir,
+                regenerate=regenerate,
+                global_params=global_params,
+                lc_min_redshift=lc_min_redshift,
+                lc_max_redshift=lc_max_redshift,
+                lc_quantities=lc_quantities,
+                save_global_xhi=save_global_xhi,
+                save_tau_value=save_tau_value,
+                use_node_boxes=use_node_boxes,
+                use_lightcone=use_lightcone,
+                z_extrap_min=z_extrap_min,
+                z_extrap_max=z_extrap_max,
+                n_z_interp=n_z_interp,
             )
         ]
