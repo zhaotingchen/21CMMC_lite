@@ -94,6 +94,7 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         save_tau_gp: bool = False,
         save_inv_tau_pdf: bool = False,
         model_err_fraction: float = 0.0,
+        only_save_lc: bool = False,
     ):
         EoRSimulator.__init__(
             self, inputs_21cmfast, cache_dir, regenerate, global_params
@@ -102,7 +103,7 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         self.observation = observation
         if observation != "xqr30":
             raise ValueError(f"Observation {observation} not supported")
-
+        self.only_save_lc = only_save_lc
         data_dir = os.path.join(
             os.path.dirname(__file__), f"data/Forests/{observation}"
         )
@@ -145,6 +146,7 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
                 save_tau_gp=save_tau_gp,
                 save_inv_tau_pdf=save_inv_tau_pdf,
                 model_err_fraction=model_err_fraction,
+                only_save_lc=only_save_lc,
             )
         ]
 
