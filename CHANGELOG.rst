@@ -10,6 +10,9 @@ Added
 - Add MPI support for emcee and nautilus
 - A simple lightcone simulator that can be used to simulate the lightcone and calculate the global neutral fraction
 - Allow likelihood class to invoke the lightcone simulator
+- Add a simulator class for forest
+- Add a likelihood class for forest
+
 
 Fixed
 ~~~~~

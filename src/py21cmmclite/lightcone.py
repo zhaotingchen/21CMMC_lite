@@ -298,7 +298,6 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
             "kinetic_temperature",
         ],
         correct_gp_to_hydro: bool = False,
-        correct_gp_to_hydro_mapping: str | None = None,
         max_correct_filling_factor: float = 0.7,
         kde_repeat_num: int = 30,
         inverse_tau_bin_edges: list[float] = np.linspace(0 - 0.0025, 1 + 0.0025, 202),
@@ -319,7 +318,6 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
         self.save_tau_gp = save_tau_gp
         self.save_inv_tau_pdf = save_inv_tau_pdf
         self.correct_gp_to_hydro = correct_gp_to_hydro
-        self.correct_gp_to_hydro_mapping = correct_gp_to_hydro_mapping
         if self.correct_gp_to_hydro:
             self.correct_gp_to_hydro_mapping = os.path.join(
                 os.path.dirname(__file__), "data/Forests/tau_mapping.npy"

@@ -1,8 +1,12 @@
-from re import S
 from .coeval import CoevalNeutralFraction, EoRSimulator
 import numpy as np
 import py21cmfast as p21
-from .lightcone import LightconeNeutralFraction, LightconeCMBTau
+from .lightcone import (
+    LightconeNeutralFraction,
+    LightconeCMBTau,
+    LightconeLyaOpticalDepth,
+)
+import os
 
 
 def compute_chi2(model_vector, data_vector, inv_covariance):
@@ -69,6 +73,94 @@ class LikelihoodBase:
         model, blob = self.gather_model(varied_params_values)
         ll = self.likelihood_function(model, self.gather_data())
         return ll, blob
+
+
+class LikelihoodForest(EoRSimulator, LikelihoodBase):
+    """
+    Likelihood for forest.
+    """
+
+    def __init__(
+        self,
+        inputs_21cmfast: p21.InputParameters,
+        varied_params: list[str],
+        cache_dir: str,
+        regenerate: bool = False,
+        global_params: dict | None = None,
+        lc_min_redshift: float | None = None,
+        lc_max_redshift: float | None = None,
+        observation: str = "xqr30",
+        correct_gp_to_hydro: bool = False,
+        save_tau_gp: bool = False,
+        save_inv_tau_pdf: bool = False,
+        model_err_fraction: float = 0.0,
+    ):
+        EoRSimulator.__init__(
+            self, inputs_21cmfast, cache_dir, regenerate, global_params
+        )
+        LikelihoodBase.__init__(self, varied_params)
+        self.observation = observation
+        if observation != "xqr30":
+            raise ValueError(f"Observation {observation} not supported")
+
+        data_dir = os.path.join(
+            os.path.dirname(__file__), f"data/Forests/{observation}"
+        )
+        # hard coded for now
+        inverse_tau_bin_edges = np.linspace(0 - 0.0025, 1 + 0.0025, 202)
+        redshift_bin_centers = np.linspace(5, 6.2, 7)
+        redshift_bin_edges = np.linspace(4.9, 6.3, 8)
+        self.inv_tau_pdf_data = [
+            np.load(
+                os.path.join(
+                    data_dir,
+                    f"dz0pt2/inv_tau_dect_z{str(np.round(z,1)).replace('.', 'pt')}.npy",
+                )
+            )
+            for z in redshift_bin_centers
+        ]
+        lc_quantities = [
+            "brightness_temp",
+            "neutral_fraction",
+            "ionisation_rate_G12",
+            "density",
+            "kinetic_temperature",
+        ]
+        max_correct_filling_factor = 0.7
+        kde_repeat_num = 30
+        self.simulators = [
+            LightconeLyaOpticalDepth(
+                redshift_bin_edges=redshift_bin_edges,
+                inputs=inputs_21cmfast,
+                cache_dir=cache_dir,
+                regenerate=regenerate,
+                global_params=global_params,
+                lc_min_redshift=lc_min_redshift,
+                lc_max_redshift=lc_max_redshift,
+                lc_quantities=lc_quantities,
+                correct_gp_to_hydro=correct_gp_to_hydro,
+                max_correct_filling_factor=max_correct_filling_factor,
+                kde_repeat_num=kde_repeat_num,
+                inverse_tau_bin_edges=inverse_tau_bin_edges,
+                save_tau_gp=save_tau_gp,
+                save_inv_tau_pdf=save_inv_tau_pdf,
+                model_err_fraction=model_err_fraction,
+            )
+        ]
+
+    def gather_data(self):
+        return [self.inv_tau_pdf_data]
+
+    def likelihood_function(self, model, data):
+        log_p = 0.0
+        model = model[0]
+        data = data[0]
+        for i in range(len(self.simulators[0].redshift_bin_edges) - 1):
+            log_prob_i = np.log((self.inv_tau_pdf_data[i] * model[i]).sum(1)) * (
+                self.inv_tau_pdf_data[i]
+            ).sum(1)
+            log_p += log_prob_i.sum()
+        return log_p
 
 
 class LikelihoodGaussian(LikelihoodBase):
