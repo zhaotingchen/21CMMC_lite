@@ -93,6 +93,7 @@ class SamplerBase:
     def find_21cmfast_cache_files(self, params_values, only_astro: bool = False):
         params_values = np.array(params_values)
         datasets = []
+        file_path = []
         for likelihood in self.likelihood:
             if isinstance(likelihood, EoRSimulator):
                 flag = self.find_subset_for_likelihood(likelihood)
@@ -116,14 +117,20 @@ class SamplerBase:
                 datasets.extend(dataset_i)
             for sim in likelihood.simulators:
                 if isinstance(sim, LightconeSimulator):
-                    lc_file_path = get_lc_file_path(self.cache_dir, inputs)
+                    lc_file_path = sim.generate_lc_file_path(
+                        likelihood.get_update_dict(params_values[flag])
+                    )
                     datasets.append(lc_file_path)
                     break
             # convert to string
             datasets = [str(data) for data in datasets]
             # find file paths
-            file_path = [data[: data.rfind("/")] for data in datasets]
-            file_path = np.unique(file_path)
+            if not likelihood.only_save_lc:
+                file_path_i = [data[: data.rfind("/")] for data in datasets]
+                file_path_i = np.unique(file_path_i)
+            else:
+                file_path_i = []
+            file_path.extend(file_path_i)
         return datasets, file_path
 
     def clear_cache_for_one_params_set(self, params_values, only_astro: bool = False):
@@ -136,7 +143,8 @@ class SamplerBase:
             if os.path.isfile(file):
                 # print(file)
                 os.remove(file)
-        self.clear_empty_cache_subdir(file_path)
+        for path in file_path:
+            self.clear_empty_cache_subdir(path)
 
     def clear_astro_cache(self):
         for likelihood in self.likelihood:

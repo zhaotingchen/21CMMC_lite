@@ -92,6 +92,7 @@ class LightconeSimulator(EoRSimulator):
         lc_min_redshift: float | None = None,
         lc_max_redshift: float | None = None,
         lc_quantities: list[str] = ["brightness_temp", "neutral_fraction"],
+        only_save_lc: bool = False,
     ):
         super().__init__(inputs, cache_dir, regenerate, global_params)
         self.lc_min_redshift = lc_min_redshift
@@ -101,15 +102,30 @@ class LightconeSimulator(EoRSimulator):
         if self.lc_max_redshift is None:
             self.lc_max_redshift = np.max(inputs.node_redshifts)
         self.lc_quantities = lc_quantities
+        self.only_save_lc = only_save_lc
+
+    def generate_lc_file_path(self, update_params: dict = {}):
+        if self.only_save_lc:
+            h = hashlib.new("sha256")
+            h.update(str(list(update_params.values())).encode())
+            lc_id = h.hexdigest()
+            return os.path.join(self.cache_dir, f"lightcone_{lc_id}.h5")
+        else:
+            inputs = self.get_update_input(update_params)
+            return get_lc_file_path(self.cache_dir, inputs)
 
     def simulate(self, update_params: dict = {}):
         inputs = self.get_update_input(update_params)
         # try to see if lightcone file exists
-        lc_file_path = get_lc_file_path(self.cache_dir, inputs)
+        lc_file_path = self.generate_lc_file_path(update_params)
         if lc_file_path is not None:
             if os.path.exists(lc_file_path):
                 return 1.0
         cache = OutputCache(self.cache_dir)
+        if self.only_save_lc:
+            cacheconfig = p21.CacheConfig.off()
+        else:
+            cacheconfig = p21.CacheConfig.on()
         # maybe should allow select angular lightcone as well
         lc_cfg = p21.RectilinearLightconer.between_redshifts(
             min_redshift=self.lc_min_redshift,
@@ -122,9 +138,10 @@ class LightconeSimulator(EoRSimulator):
             lightconer=lc_cfg,
             inputs=inputs,
             cache=cache,
+            write=cacheconfig,
         )
         # re-obtain the file path
-        lc_file_path = get_lc_file_path(self.cache_dir, inputs)
+        lc_file_path = self.generate_lc_file_path(update_params)
         lc.save(lc_file_path, clobber=True)
         with h5py.File(lc_file_path, "a") as f:
             f.create_dataset("lightcone_redshifts", data=lc.lightcone_redshifts)
@@ -152,6 +169,7 @@ class LightconeCMBTau(LightconeSimulator):
         z_extrap_min: float = 5,
         z_extrap_max: float = 25,
         n_z_interp: int = 41,
+        only_save_lc: bool = False,
     ):
         super().__init__(
             inputs,
@@ -161,6 +179,7 @@ class LightconeCMBTau(LightconeSimulator):
             lc_min_redshift,
             lc_max_redshift,
             lc_quantities,
+            only_save_lc,
         )
         self.save_global_xhi = save_global_xhi
         self.save_tau_value = save_tau_value
@@ -171,6 +190,10 @@ class LightconeCMBTau(LightconeSimulator):
         self.n_z_interp = n_z_interp
         if self.use_node_boxes == self.use_lightcone:
             raise ValueError("use_node_boxes and use_lightcone cannot be the same")
+        if self.only_save_lc and self.use_node_boxes:
+            raise ValueError(
+                "only_save_lc and use_node_boxes cannot be true at the same time"
+            )
 
     @property
     def z_interp_arr(self):
@@ -188,7 +211,7 @@ class LightconeCMBTau(LightconeSimulator):
             ]
             global_xhi = [xhi.get("neutral_fraction").mean() for xhi in xhibox]
         elif self.use_lightcone:
-            lc_file_path = get_lc_file_path(self.cache_dir, inputs)
+            lc_file_path = self.generate_lc_file_path(update_params)
             if not os.path.exists(lc_file_path):
                 raise FileNotFoundError(f"Lightcone file not found: {lc_file_path}")
             with h5py.File(lc_file_path, "r") as f:
@@ -233,6 +256,7 @@ class LightconeNeutralFraction(LightconeSimulator):
         lc_quantities: list[str] = ["brightness_temp", "neutral_fraction"],
         save_xhi_points: bool = False,
         save_xhi_lc: bool = False,
+        only_save_lc: bool = False,
     ):
         super().__init__(
             inputs,
@@ -242,6 +266,7 @@ class LightconeNeutralFraction(LightconeSimulator):
             lc_min_redshift,
             lc_max_redshift,
             lc_quantities,
+            only_save_lc,
         )
         self.xhi_z_edges_low = xhi_z_edges_low
         self.xhi_z_edges_high = xhi_z_edges_high
@@ -256,7 +281,7 @@ class LightconeNeutralFraction(LightconeSimulator):
 
     def build_model_data(self, update_params: dict = {}):
         inputs = self.get_update_input(update_params)
-        lc_file_path = get_lc_file_path(self.cache_dir, inputs)
+        lc_file_path = self.generate_lc_file_path(update_params)
         if not os.path.exists(lc_file_path):
             raise FileNotFoundError(f"Lightcone file not found: {lc_file_path}")
         with h5py.File(lc_file_path, "r") as f:
@@ -304,6 +329,7 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
         save_tau_gp: bool = False,
         save_inv_tau_pdf: bool = False,
         model_err_fraction: float = 0.0,
+        only_save_lc: bool = False,
     ):
         super().__init__(
             inputs,
@@ -329,14 +355,14 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
         self.kde_repeat_num = kde_repeat_num
         self.inverse_tau_bin_edges = inverse_tau_bin_edges
         self.model_err_fraction = model_err_fraction
+        self.only_save_lc = only_save_lc
 
     @property
     def redshift_bin_centers(self):
         return (self.redshift_bin_edges[:-1] + self.redshift_bin_edges[1:]) / 2
 
     def build_model_data(self, update_params: dict = {}):
-        inputs = self.get_update_input(update_params)
-        lc_file_path = get_lc_file_path(self.cache_dir, inputs)
+        lc_file_path = self.generate_lc_file_path(update_params)
         if not os.path.exists(lc_file_path):
             raise FileNotFoundError(f"Lightcone file not found: {lc_file_path}")
         with h5py.File(lc_file_path, "r") as f:
@@ -362,7 +388,6 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
                 -np.log(np.mean(np.exp(-tau_i), axis=-1)).ravel() for tau_i in tau_gp
             ]
             tau_gp = np.array(tau_gp)
-            n_los = self.inputs.simulation_options.cell_size**2
             if self.correct_gp_to_hydro:
                 tau_hydros = []
                 filling_factor = [
