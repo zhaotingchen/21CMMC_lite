@@ -455,6 +455,7 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
             tau_pdf_i = np.histogram(
                 tau_gp_i**-1, bins=self.inverse_tau_bin_edges, density=True
             )[0]
+            tau_pdf_i[np.isnan(tau_pdf_i)] = 0.0
             tau_pdf.append(tau_pdf_i)
         tau_pdf = np.array(tau_pdf)
         blob = {}
