@@ -173,7 +173,7 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         model = model[0]
         data = data[0]
         for i in range(len(self.simulators[0].redshift_bin_edges) - 1):
-            log_prob_i = np.log((self.inv_tau_pdf_data[i] * model[i]).sum(1)) * (
+            log_prob_i = np.log((self.inv_tau_pdf_data[i] * model[i] / model[i].max()).sum(1)) * (
                 self.inv_tau_pdf_data[i]
             ).sum(1)
             log_p += log_prob_i.sum()
