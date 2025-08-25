@@ -95,6 +95,7 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         save_inv_tau_pdf: bool = False,
         model_err_fraction: float = 0.0,
         only_save_lc: bool = False,
+        subdir_for_only_save_lc: bool = False,
     ):
         EoRSimulator.__init__(
             self, inputs_21cmfast, cache_dir, regenerate, global_params
@@ -104,6 +105,7 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         if observation != "xqr30":
             raise ValueError(f"Observation {observation} not supported")
         self.only_save_lc = only_save_lc
+        self.subdir_for_only_save_lc = subdir_for_only_save_lc
         data_dir = os.path.join(
             os.path.dirname(__file__), f"data/Forests/{observation}"
         )
@@ -147,6 +149,7 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
                 save_inv_tau_pdf=save_inv_tau_pdf,
                 model_err_fraction=model_err_fraction,
                 only_save_lc=only_save_lc,
+                subdir_for_only_save_lc=subdir_for_only_save_lc,
             )
         ]
 
@@ -340,6 +343,7 @@ class LikelihoodLightconeCMBTau(EoRSimulator, LikelihoodGaussian):
         z_extrap_max: float = 25,
         n_z_interp: int = 41,
         only_save_lc: bool = False,
+        subdir_for_only_save_lc: bool = False,
     ):
         EoRSimulator.__init__(
             self, inputs_21cmfast, cache_dir, regenerate, global_params
@@ -363,6 +367,7 @@ class LikelihoodLightconeCMBTau(EoRSimulator, LikelihoodGaussian):
         self.z_extrap_max = z_extrap_max
         self.n_z_interp = n_z_interp
         self.only_save_lc = only_save_lc
+        self.subdir_for_only_save_lc = subdir_for_only_save_lc
         self.simulators = [
             LightconeCMBTau(
                 inputs=inputs_21cmfast,
@@ -380,5 +385,6 @@ class LikelihoodLightconeCMBTau(EoRSimulator, LikelihoodGaussian):
                 z_extrap_max=z_extrap_max,
                 n_z_interp=n_z_interp,
                 only_save_lc=only_save_lc,
+                subdir_for_only_save_lc=subdir_for_only_save_lc,
             )
         ]

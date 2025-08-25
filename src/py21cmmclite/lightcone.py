@@ -93,6 +93,7 @@ class LightconeSimulator(EoRSimulator):
         lc_max_redshift: float | None = None,
         lc_quantities: list[str] = ["brightness_temp", "neutral_fraction"],
         only_save_lc: bool = False,
+        subdir_for_only_save_lc: bool = False,
     ):
         super().__init__(inputs, cache_dir, regenerate, global_params)
         self.lc_min_redshift = lc_min_redshift
@@ -103,13 +104,18 @@ class LightconeSimulator(EoRSimulator):
             self.lc_max_redshift = np.max(inputs.node_redshifts)
         self.lc_quantities = lc_quantities
         self.only_save_lc = only_save_lc
+        self.subdir_for_only_save_lc = subdir_for_only_save_lc
 
     def generate_lc_file_path(self, update_params: dict = {}):
         if self.only_save_lc:
             h = hashlib.new("sha256")
             h.update(str(list(update_params.values())).encode())
             lc_id = h.hexdigest()
-            return os.path.join(self.cache_dir, f"lightcone_{lc_id}.h5")
+            if self.subdir_for_only_save_lc:
+                file_name = os.path.join(self.cache_dir, f"{lc_id}/lightcone.h5")
+            else:
+                file_name = os.path.join(self.cache_dir, f"lightcone_{lc_id}.h5")
+            return file_name
         else:
             inputs = self.get_update_input(update_params)
             return get_lc_file_path(self.cache_dir, inputs)
@@ -170,6 +176,7 @@ class LightconeCMBTau(LightconeSimulator):
         z_extrap_max: float = 25,
         n_z_interp: int = 41,
         only_save_lc: bool = False,
+        subdir_for_only_save_lc: bool = False,
     ):
         super().__init__(
             inputs,
@@ -180,6 +187,7 @@ class LightconeCMBTau(LightconeSimulator):
             lc_max_redshift,
             lc_quantities,
             only_save_lc,
+            subdir_for_only_save_lc,
         )
         self.save_global_xhi = save_global_xhi
         self.save_tau_value = save_tau_value
@@ -257,6 +265,7 @@ class LightconeNeutralFraction(LightconeSimulator):
         save_xhi_points: bool = False,
         save_xhi_lc: bool = False,
         only_save_lc: bool = False,
+        subdir_for_only_save_lc: bool = False,
     ):
         super().__init__(
             inputs,
@@ -267,6 +276,7 @@ class LightconeNeutralFraction(LightconeSimulator):
             lc_max_redshift,
             lc_quantities,
             only_save_lc,
+            subdir_for_only_save_lc,
         )
         self.xhi_z_edges_low = xhi_z_edges_low
         self.xhi_z_edges_high = xhi_z_edges_high
@@ -330,6 +340,7 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
         save_inv_tau_pdf: bool = False,
         model_err_fraction: float = 0.0,
         only_save_lc: bool = False,
+        subdir_for_only_save_lc: bool = False,
     ):
         super().__init__(
             inputs,
@@ -339,6 +350,8 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
             lc_min_redshift,
             lc_max_redshift,
             lc_quantities,
+            only_save_lc,
+            subdir_for_only_save_lc,
         )
         self.redshift_bin_edges = redshift_bin_edges
         self.save_tau_gp = save_tau_gp
@@ -355,7 +368,6 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
         self.kde_repeat_num = kde_repeat_num
         self.inverse_tau_bin_edges = inverse_tau_bin_edges
         self.model_err_fraction = model_err_fraction
-        self.only_save_lc = only_save_lc
 
     @property
     def redshift_bin_centers(self):
