@@ -128,6 +128,9 @@ class LightconeSimulator(EoRSimulator):
             if os.path.exists(lc_file_path):
                 return 1.0
         cache = OutputCache(self.cache_dir)
+        if self.subdir_for_only_save_lc:
+            cache_dir = os.path.join(self.cache_dir, lc_file_path.split("/")[-2])
+            cache = OutputCache(cache_dir)
         if self.only_save_lc:
             cacheconfig = p21.CacheConfig.off()
         else:
