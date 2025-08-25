@@ -403,6 +403,7 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
                 -np.log(np.mean(np.exp(-tau_i), axis=-1)).ravel() for tau_i in tau_gp
             ]
             tau_gp = np.array(tau_gp)
+            tau_gp[tau_gp < 0] = 1e-4
             if self.correct_gp_to_hydro:
                 tau_hydros = []
                 filling_factor = [
@@ -450,7 +451,7 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
                 tau_gp_i = tau_gp_i * (
                     1 + np.random.normal(0, self.model_err_fraction, tau_gp[i].shape)
                 )
-                tau_gp_i[tau_gp_i < 0] = 0
+                tau_gp_i[tau_gp_i < 0] = 1e-4
             tau_pdf_i = np.histogram(
                 tau_gp_i**-1, bins=self.inverse_tau_bin_edges, density=True
             )[0]
