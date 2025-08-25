@@ -8,7 +8,7 @@ from py21cmfast.io.caching import OutputCache
 import os
 import nautilus
 from scipy.stats import norm
-from .lightcone import get_lc_file_path, LightconeSimulator
+from .lightcone import LightconeSimulator
 import glob
 import shutil
 

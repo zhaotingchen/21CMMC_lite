@@ -90,6 +90,7 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         lc_min_redshift: float | None = None,
         lc_max_redshift: float | None = None,
         observation: str = "xqr30",
+        use_limit_pdf: bool = False,
         correct_gp_to_hydro: bool = False,
         save_tau_gp: bool = False,
         save_inv_tau_pdf: bool = False,
@@ -104,6 +105,7 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         self.observation = observation
         if observation != "xqr30":
             raise ValueError(f"Observation {observation} not supported")
+        self.use_limit_pdf = use_limit_pdf
         self.only_save_lc = only_save_lc
         self.subdir_for_only_save_lc = subdir_for_only_save_lc
         data_dir = os.path.join(
@@ -113,15 +115,25 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         inverse_tau_bin_edges = np.linspace(0 - 0.0025, 1 + 0.0025, 202)
         redshift_bin_centers = np.linspace(5, 6.2, 7)
         redshift_bin_edges = np.linspace(4.9, 6.3, 8)
-        self.inv_tau_pdf_data = [
-            np.load(
+        data = []
+        for z in redshift_bin_centers:
+            data_i = np.load(
                 os.path.join(
                     data_dir,
                     f"dz0pt2/inv_tau_dect_z{str(np.round(z,1)).replace('.', 'pt')}.npy",
                 )
             )
-            for z in redshift_bin_centers
-        ]
+            if use_limit_pdf:
+                data_i_limit = np.load(
+                    os.path.join(
+                        data_dir,
+                        f"dz0pt2/inv_tau_limit_z{str(np.round(z,1)).replace('.', 'pt')}.npy",
+                    )
+                )
+                if data_i_limit.size > 0:
+                    data_i = np.vstack((data_i, data_i_limit))
+            data.append(data_i)
+        self.inv_tau_pdf_data = data
         lc_quantities = [
             "brightness_temp",
             "neutral_fraction",
