@@ -2,6 +2,7 @@ import logging
 import numpy as np
 import py21cmfast as p21
 from py21cmfast.io.caching import OutputCache
+from py21cmfast.wrapper.cfuncs import compute_luminosity_function
 
 logger = logging.getLogger("21cmFAST")
 
@@ -25,6 +26,42 @@ class BaseSimulator:
 
     def build_blob_data(self, update_params: dict = {}):
         pass
+
+
+class LuminosityFunctionSimulator(BaseSimulator):
+    """
+    Base class for simulating luminosity function.
+    Note that, the simulation of UVLF is purely analytical, and therefore does not require invoking
+    the actual run of 21cmFAST.
+    """
+
+    def __init__(
+        self,
+        inputs: p21.InputParameters,
+        redshifts: list[float] | np.ndarray,
+        n_uv_bins: int = 100,
+        save_uvlf: bool = False,
+    ):
+        super().__init__(inputs)
+        self.redshifts = redshifts
+        self.save_uvlf = save_uvlf
+        self.n_uv_bins = n_uv_bins
+
+    def get_update_input(self, update_dict: dict):
+        return self.inputs.evolve_input_structs(**update_dict)
+
+    def build_model_data(self, update_params: dict = {}):
+        inputs = self.get_update_input(update_params)
+        Muvfunc, Mhfunc, lfunc = compute_luminosity_function(
+            redshifts=self.redshifts,
+            inputs=inputs,
+            nbins=self.n_uv_bins,
+            mturnovers=inputs.astro_params.M_TURN * np.ones(len(self.redshifts)),
+        )
+        blob = {}
+        if self.save_uvlf:
+            blob["uvlf"] = np.array([Muvfunc, lfunc])
+        return [Muvfunc, lfunc], blob
 
 
 class EoRSimulator(BaseSimulator):

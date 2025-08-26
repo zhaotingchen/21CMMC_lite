@@ -1,4 +1,4 @@
-from .coeval import CoevalNeutralFraction, EoRSimulator
+from .coeval import CoevalNeutralFraction, EoRSimulator, LuminosityFunctionSimulator
 import numpy as np
 import py21cmfast as p21
 from .lightcone import (
@@ -7,6 +7,7 @@ from .lightcone import (
     LightconeLyaOpticalDepth,
 )
 import os
+from scipy.interpolate import InterpolatedUnivariateSpline
 
 
 def compute_chi2(model_vector, data_vector, inv_covariance):
@@ -173,9 +174,9 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         model = model[0]
         data = data[0]
         for i in range(len(self.simulators[0].redshift_bin_edges) - 1):
-            log_prob_i = np.log((self.inv_tau_pdf_data[i] * model[i] / model[i].max()).sum(1)) * (
-                self.inv_tau_pdf_data[i]
-            ).sum(1)
+            log_prob_i = np.log(
+                (self.inv_tau_pdf_data[i] * model[i] / model[i].max()).sum(1)
+            ) * (self.inv_tau_pdf_data[i]).sum(1)
             log_p += log_prob_i.sum()
         return log_p
 
@@ -400,3 +401,75 @@ class LikelihoodLightconeCMBTau(EoRSimulator, LikelihoodGaussian):
                 subdir_for_only_save_lc=subdir_for_only_save_lc,
             )
         ]
+
+
+class LikelihoodLuminosityFunction(LikelihoodGaussian):
+    """
+    Likelihood for luminosity function.
+    """
+
+    def __init__(
+        self,
+        inputs_21cmfast: p21.InputParameters,
+        cache_dir: str,
+        varied_params: list[str],
+        data_dict: dict | None = None,
+        redshifts: list[float] | np.ndarray | None = None,
+        n_uv_bins: int = 100,
+        save_uvlf: bool = False,
+        simulate_data: bool = False,
+        simulate_error_fraction: float = 0.1,
+    ):
+        super().__init__(
+            varied_params, data_dict, simulate_data, simulate_error_fraction
+        )
+        self.n_uv_bins = n_uv_bins
+        self.save_uvlf = save_uvlf
+        self.data_dict = data_dict
+        if data_dict is None and redshifts is None:
+            redshifts = np.array([6, 7, 8, 10])
+            data_dir = [
+                os.path.join(
+                    os.path.dirname(__file__),
+                    f"data/UVLF/LF_lfuncs_z{str(np.round(z,0))}.npz",
+                )
+                for z in redshifts
+            ]
+            noise_dir = [
+                os.path.join(
+                    os.path.dirname(__file__),
+                    f"data/UVLF/LF_sigmas_z{str(np.round(z,0))}.npz",
+                )
+                for z in redshifts
+            ]
+            data = [np.load(data_dir) for data_dir in data_dir]
+            noise = [np.load(noise_dir) for noise_dir in noise_dir]
+            self.data_dict = {
+                "x_vector": [d["Muv"] for d in data],
+                "data_vector": np.concatenate([d["lfunc"] for d in data]),
+                "data_inv_covariance": np.diag(
+                    np.concatenate([1 / d["sigma"] ** 2 for d in noise])
+                ),
+            }
+        self.redshifts = redshifts
+        self.simulators = [
+            LuminosityFunctionSimulator(
+                inputs=inputs_21cmfast,
+                redshifts=redshifts,
+                n_uv_bins=n_uv_bins,
+                save_uvlf=save_uvlf,
+            )
+        ]
+
+    def likelihood_function(self, model, data):
+        Muvfunc, lfunc = model[0]
+        lf_interp = []
+        for i in range(len(self.redshifts)):
+            x = Muvfunc[i]
+            y = lfunc[i]
+            sel = ~np.isnan(y)
+            loglf_func = InterpolatedUnivariateSpline(x[sel][::-1], y[sel][::-1])
+            lf_i = 10 ** loglf_func(data["x_vector"][i])
+            lf_interp.append(lf_i)
+        lf_interp = np.concatenate(lf_interp)
+        return super().likelihood_function(lf_interp, data)
