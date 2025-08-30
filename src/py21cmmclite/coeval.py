@@ -31,8 +31,21 @@ class BaseSimulator:
 class LuminosityFunctionSimulator(BaseSimulator):
     """
     Base class for simulating luminosity function.
-    Note that, the simulation of UVLF is purely analytical, and therefore does not require invoking
+    Note that, the simulation of UVLF is purely analytical (see Equation 11 of https://arxiv.org/pdf/1809.08995), and therefore does not require invoking
     the actual run of 21cmFAST.
+
+    Parameters
+    ----------
+    inputs: p21.InputParameters
+        Input parameters for 21cmFAST.
+    redshifts: list[float] | np.ndarray
+        Redshifts to calculate the UV luminosity function.
+    n_uv_bins: int
+        Number of UV bins.
+    save_uvlf: bool
+        Whether to save the UV luminosity function to the blob.
+
+
     """
 
     def __init__(
