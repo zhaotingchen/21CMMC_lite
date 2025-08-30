@@ -8,6 +8,9 @@ from .lightcone import (
 )
 import os
 from scipy.interpolate import InterpolatedUnivariateSpline
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 
 def compute_chi2(model_vector, data_vector, inv_covariance):
@@ -73,6 +76,13 @@ class LikelihoodBase:
     def compute_likelihood(self, varied_params_values):
         model, blob = self.gather_model(varied_params_values)
         ll = self.likelihood_function(model, self.gather_data())
+        if np.isnan(ll):
+            logging.warning(
+                f"Likelihood is nan for params {varied_params_values}"
+                f"for simulator {self.__class__.__name__}. "
+                "setting to -inf"
+            )
+            ll = -np.inf
         return ll, blob
 
 
