@@ -7,7 +7,7 @@ from .coeval import EoRSimulator
 from py21cmfast.io.caching import OutputCache
 import os
 import nautilus
-from scipy.stats import norm
+from scipy.stats import norm, truncnorm
 from .lightcone import LightconeSimulator
 import glob
 import shutil
@@ -75,7 +75,7 @@ class SamplerBase:
                         raise ValueError("cache_dir of likelihoods must be the same")
         self.cache_dir = cache_dir
         for prior in self.params_prior:
-            if prior[0] not in ["uniform", "gaussian"]:
+            if prior[0] not in ["uniform", "gaussian", "truncated_gaussian"]:
                 raise ValueError(f"Unsupported prior type: {prior[0]}")
 
     @property
@@ -207,6 +207,10 @@ class SamplerNautilus(SamplerBase):
                 dist = (self.params_prior[i][1], self.params_prior[i][2])
             elif self.params_prior[i][0] == "gaussian":
                 dist = norm(loc=self.params_prior[i][1], scale=self.params_prior[i][2])
+            elif self.params_prior[i][0] == "truncated_gaussian":
+                loc, scale, clip_low, clip_high = self.params_prior[i][1:]
+                a, b = (clip_low - loc) / scale, (clip_high - loc) / scale
+                dist = truncnorm(a=a, b=b, loc=loc, scale=scale)
             prior.add_parameter(param_name, dist=dist)
         return prior
 
