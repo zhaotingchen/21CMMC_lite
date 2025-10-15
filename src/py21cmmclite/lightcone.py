@@ -451,7 +451,7 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
                 tau_gp_i = tau_gp_i * (
                     1 + np.random.normal(0, self.model_err_fraction, tau_gp[i].shape)
                 )
-                tau_gp_i[tau_gp_i < 0] = 1e-4
+                tau_gp_i[tau_gp_i <= 0] = 1e-4
             tau_pdf_i = np.histogram(
                 tau_gp_i**-1, bins=self.inverse_tau_bin_edges, density=True
             )[0]
@@ -460,7 +460,7 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
         tau_pdf = np.array(tau_pdf)
         blob = {}
         if self.save_tau_gp:
-            blob["tau_forest_gp"] = tau_gp
+            blob["tau_forest_gp"] = np.nan_to_num(tau_gp, posinf=1e10, neginf=-1e10)
         if self.save_inv_tau_pdf:
-            blob["inv_tau_forest_pdf"] = tau_pdf
+            blob["inv_tau_forest_pdf"] = np.nan_to_num(tau_pdf, posinf=1e10, neginf=-1e10)
         return tau_pdf, blob

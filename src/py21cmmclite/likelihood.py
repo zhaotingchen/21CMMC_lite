@@ -188,6 +188,8 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
                 (self.inv_tau_pdf_data[i] * model[i] / model[i].max()).sum(1)
             ) * (self.inv_tau_pdf_data[i]).sum(1)
             log_p += log_prob_i.sum()
+        if np.isnan(log_p) or np.isinf(log_p):
+            log_p = -np.inf
         return log_p
 
 
