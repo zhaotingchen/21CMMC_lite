@@ -431,6 +431,7 @@ class LikelihoodLuminosityFunction(LikelihoodGaussian):
         save_uvlf: bool = False,
         simulate_data: bool = False,
         simulate_error_fraction: float = 0.1,
+        Muv_range: tuple[float, float] | None = None,
     ):
         super().__init__(
             varied_params, data_dict, simulate_data, simulate_error_fraction
@@ -458,11 +459,31 @@ class LikelihoodLuminosityFunction(LikelihoodGaussian):
             noise = [np.load(noise_dir) for noise_dir in noise_dir]
             self.data_dict = {
                 "x_vector": [d["Muv"] for d in data],
-                "data_vector": np.concatenate([d["lfunc"] for d in data]),
-                "data_inv_covariance": np.diag(
-                    np.concatenate([1 / d["sigma"] ** 2 for d in noise])
-                ),
+                # "data_vector": np.concatenate([d["lfunc"] for d in data]),
+                "data_vector": [d["lfunc"] for d in data],
+                # "data_inv_covariance": np.diag(
+                #    np.concatenate([1 / d["sigma"] ** 2 for d in noise])
+                # ),
+                "data_inv_covariance": [1 / d["sigma"] ** 2 for d in noise],
             }
+        self.Muv_range = Muv_range
+        if Muv_range is not None:
+            x_vec_new = []
+            data_vec_new = []
+            data_inv_cov_new = []
+            for i, x_vec in enumerate(self.data_dict["x_vector"]):
+                x_sel = np.logical_and(x_vec >= Muv_range[0], x_vec <= Muv_range[1])
+                x_vec_new.append(x_vec[x_sel])
+                data_vec_new.append(self.data_dict["data_vector"][i][x_sel])
+                data_inv_cov_new.append(self.data_dict["data_inv_covariance"][i][x_sel])
+            self.data_dict["x_vector"] = x_vec_new
+            self.data_dict["data_vector"] = data_vec_new
+            self.data_dict["data_inv_covariance"] = data_inv_cov_new
+        # contatenate data_vector and data_inv_covariance
+        self.data_dict["data_vector"] = np.concatenate(self.data_dict["data_vector"])
+        self.data_dict["data_inv_covariance"] = np.diag(
+            np.concatenate(self.data_dict["data_inv_covariance"])
+        )
         self.redshifts = redshifts
         self.simulators = [
             LuminosityFunctionSimulator(
