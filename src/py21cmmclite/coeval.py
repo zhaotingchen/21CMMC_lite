@@ -232,4 +232,4 @@ class CoevalPhotonConsFlag(CoevalNeutralFraction):
         ]
         global_xhi = [xhi.get("neutral_fraction").mean() for xhi in xhibox][0]
         flag = global_xhi > self.xhi_threshold
-        return flag
+        return flag, {}

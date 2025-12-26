@@ -1,4 +1,9 @@
-from .coeval import CoevalNeutralFraction, EoRSimulator, LuminosityFunctionSimulator
+from .coeval import (
+    CoevalNeutralFraction,
+    EoRSimulator,
+    LuminosityFunctionSimulator,
+    CoevalPhotonConsFlag,
+)
 import numpy as np
 import py21cmfast as p21
 from .lightcone import (
@@ -84,6 +89,54 @@ class LikelihoodBase:
             )
             ll = -np.inf
         return ll, blob
+
+
+class LikelihoodPhotonConsFlag(EoRSimulator, LikelihoodBase):
+    """
+    Likelihood for photon conservation flag.
+
+    If the flag is true, rest of the likelihoods will be skipped
+    in a sampler. Therefore, to ensure the blob shape is correct,
+    the blob_shape should be provided unless no blob is saved.
+    """
+
+    def __init__(
+        self,
+        inputs_21cmfast: p21.InputParameters,
+        varied_params: list[str],
+        cache_dir: str,
+        regenerate: bool = False,
+        global_params: dict | None = None,
+        xhi_threshold: float = 0.001,
+        blob_shape: tuple[int, ...] | None = None,
+    ):
+        EoRSimulator.__init__(
+            self, inputs_21cmfast, cache_dir, regenerate, global_params
+        )
+        LikelihoodBase.__init__(self, varied_params)
+        self.simulators = [
+            CoevalPhotonConsFlag(
+                inputs=inputs_21cmfast,
+                cache_dir=cache_dir,
+                regenerate=regenerate,
+                global_params=global_params,
+                xhi_threshold=xhi_threshold,
+            )
+        ]
+        self.blob_shape = blob_shape
+
+    def likelihood_function(self, model, data):
+        if model[0]:
+            return -np.inf
+        return 0.0
+
+    def compute_likelihood(self, varied_params_values):
+        model, blob = self.gather_model(varied_params_values)
+        ll = self.likelihood_function(model, self.gather_data())
+        if ll == 0.0 or self.blob_shape is None:
+            return ll, {}
+        else:
+            return ll, {"empty_blob": np.zeros(self.blob_shape)}
 
 
 class LikelihoodForest(EoRSimulator, LikelihoodBase):
