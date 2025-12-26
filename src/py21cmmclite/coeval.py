@@ -175,3 +175,61 @@ class CoevalNeutralFraction(CoevalSimulator):
                 [xhi.get("neutral_fraction") for xhi in xhibox]
             )
         return global_xhi, blob
+
+
+class CoevalPhotonConsFlag(CoevalNeutralFraction):
+    """
+    Simulate the coeval cube at `PHOTONCONS_CALIBRATION_END` without photon conservation,
+    and calculate the global neutral fraction at that redshift. Returns a
+    flag indicating whether the global neutral fraction is smaller than the threshold.
+    This is useful in an inference run to be the first simulator to check,
+    and if flagged, the parameter set should be rejected before running other simulators,
+    to avoid an error being raised.
+
+    If the PHOTON_CONS_TYPE is "no-photoncons", this simulator will be skipped.
+    """
+
+    def __init__(
+        self,
+        inputs: p21.InputParameters,
+        cache_dir: str,
+        regenerate: bool = False,
+        global_params: dict | None = None,
+        xhi_threshold: float = 0.001,
+    ):
+        # only run at the end z of photoncon calibration
+        redshifts = [
+            inputs.astro_params.PHOTONCONS_CALIBRATION_END,
+        ]
+        if inputs.astro_options.PHOTON_CONS_TYPE == "no-photoncons":
+            self.run_photoncons = False
+        else:
+            self.run_photoncons = True
+            # evolve input struct to turn off photon conservation
+            inputs = inputs.evolve_input_structs(
+                PHOTON_CONS_TYPE="no-photoncons",
+            )
+        super().__init__(redshifts, inputs, cache_dir, regenerate, global_params)
+        self.xhi_threshold = xhi_threshold
+
+    def simulate(self, update_params: dict = {}):
+        """
+        Simulate the coeval cubes at the end z of photoncon calibration.
+        Skip if PHOTON_CONS_TYPE is "no-photoncons".
+        """
+        if not self.run_photoncons:
+            return 1.0
+        return super().simulate(update_params)
+
+    def build_model_data(self, update_params: dict = {}):
+        if not self.run_photoncons:
+            return False
+        inputs = self.get_update_input(update_params)
+        xhibox = [p21.IonizedBox.new(redshift=z, inputs=inputs) for z in self.redshifts]
+        cache = OutputCache(self.cache_dir)
+        xhibox = [
+            p21.io.h5.read_output_struct(cache.find_existing(path)) for path in xhibox
+        ]
+        global_xhi = [xhi.get("neutral_fraction").mean() for xhi in xhibox][0]
+        flag = global_xhi > self.xhi_threshold
+        return flag
