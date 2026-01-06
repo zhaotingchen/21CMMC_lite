@@ -40,10 +40,7 @@ class LikelihoodBase:
     def get_update_dict(self, varied_params_values):
         if not len(varied_params_values) == len(self.varied_params):
             raise ValueError("input values must have the same length as varied_params")
-        update_params = {
-            self.varied_params[i]: varied_params_values[i]
-            for i in range(len(self.varied_params))
-        }
+        update_params = dict(zip(self.varied_params, varied_params_values))
         return update_params
 
     def gather_data(self):
