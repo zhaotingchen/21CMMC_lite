@@ -266,6 +266,7 @@ class LightconeNeutralFraction(LightconeSimulator):
         lc_max_redshift: float | None = None,
         lc_quantities: list[str] = ["brightness_temp", "neutral_fraction"],
         save_xhi_points: bool = False,
+        save_xhi_per_slice: bool = False,
         save_xhi_lc: bool = False,
         only_save_lc: bool = False,
         subdir_for_only_save_lc: bool = False,
@@ -285,6 +286,7 @@ class LightconeNeutralFraction(LightconeSimulator):
         self.xhi_z_edges_high = xhi_z_edges_high
         self.save_xhi_points = save_xhi_points
         self.save_xhi_lc = save_xhi_lc
+        self.save_xhi_per_slice = save_xhi_per_slice
         assert len(xhi_z_edges_low) == len(
             xhi_z_edges_high
         ), "xhi_z_edges_low and xhi_z_edges_high must have the same length"
@@ -309,6 +311,9 @@ class LightconeNeutralFraction(LightconeSimulator):
         blob = {}
         if self.save_xhi_points:
             blob["xhi_points_lc"] = np.array(xhi_points)
+        if self.save_xhi_per_slice:
+            blob["xhi_per_slice_lc"] = np.array(xhi_lc).mean(axis=(0, 1))
+            print(blob["xhi_per_slice_lc"].shape)
         if self.save_xhi_lc:
             blob["xhi_lc"] = np.array(xhi_lc)
         return xhi_points, blob

@@ -1,5 +1,5 @@
 import emcee
-from .likelihood import LikelihoodBase
+from .likelihood import LikelihoodBase, LikelihoodPhotonConsFlag
 import py21cmfast as p21
 import numpy as np
 from multiprocessing import Pool
@@ -13,7 +13,7 @@ import glob
 import shutil
 
 inputs_21cmfast = p21.InputParameters.from_template(
-    "simple-small",
+    "simple",
     random_seed=1234,
 )
 astro_pars_21cmfast = list(inputs_21cmfast.astro_params.asdict().keys())
@@ -31,6 +31,9 @@ class SamplerBase:
         init_pos: list[float] | np.ndarray,
         params_prior: list[tuple[str, float, float]],
         likelihood: list[LikelihoodBase],
+        derived_params_name: list[str] | None = None,
+        derived_params_expression: list[str] | None = None,
+        derived_params_prior: list[tuple[str, float, float]] | None = None,
         clear_cache: bool = True,
         save: bool = False,
         save_filename: str | None = None,
@@ -46,7 +49,31 @@ class SamplerBase:
         self.clear_cache = clear_cache
         self.save = save
         self.save_filename = save_filename
+        if derived_params_name is None:
+            derived_params_name = []
+        if derived_params_expression is None:
+            derived_params_expression = []
+        if derived_params_prior is None:
+            derived_params_prior = []
+        self.derived_params_name = derived_params_name
+        self.derived_params_expression = derived_params_expression
+        self.derived_params_prior = derived_params_prior
         self.validate_input()
+    
+    @property
+    def full_params_name(self):
+        return self.params_name + self.derived_params_name
+    
+    def get_derived_params(self, params_values):
+        derived_params_values = []
+        params_dict = dict(zip(self.params_name, params_values))
+        for name, expression in zip(self.derived_params_name, self.derived_params_expression):
+            derived_params_values.append(eval(expression, globals(), params_dict))
+        return np.array(derived_params_values)
+        
+    @property
+    def has_photoncons_flag(self):
+        return any(isinstance(likelihood, LikelihoodPhotonConsFlag) for likelihood in self.likelihood)
 
     @property
     def is_varying_astro(self):
@@ -62,10 +89,10 @@ class SamplerBase:
             raise ValueError("save_filename must be provided if save is True")
         cache_dir = None
         for likelihood in self.likelihood:
-            flag = [param in self.params_name for param in likelihood.varied_params]
+            flag = [param in self.full_params_name for param in likelihood.varied_params]
             if not all(flag):
                 raise ValueError(
-                    f"varied_params of likelihood {likelihood} must be a subset of params_name"
+                    f"varied_params of likelihood {likelihood} must be a subset of full_params_name"
                 )
             if hasattr(likelihood, "cache_dir"):
                 if cache_dir is None:
@@ -85,13 +112,15 @@ class SamplerBase:
     def find_subset_for_likelihood(self, likelihood):
         flag = [
             # this is to make sure the parameters are passed in with the correct order
-            np.where(np.array(self.params_name) == param)[0][0]
+            np.where(np.array(self.full_params_name) == param)[0][0]
             for param in likelihood.varied_params
         ]
         return flag
 
     def find_21cmfast_cache_files(self, params_values, only_astro: bool = False):
         params_values = np.array(params_values)
+        derived_params_values = self.get_derived_params(params_values)
+        params_values = np.concatenate([params_values, derived_params_values])
         datasets = []
         file_path = []
         for likelihood in self.likelihood:
@@ -161,6 +190,29 @@ class SamplerBase:
             if os.path.isdir(file):
                 if os.listdir(file) == []:
                     os.rmdir(file)
+    
+    def compute_likelihood_for_photoncons_flag(self, params_values):
+        params_values = np.array(params_values)
+        derived_params_values = self.get_derived_params(params_values)
+        params_values = np.concatenate([params_values, derived_params_values])
+        for likelihood in self.likelihood:
+            log_likelihood_tot = 0.0
+            blob_tot = {}
+            if isinstance(likelihood, LikelihoodPhotonConsFlag):
+                pars_value_i = params_values[self.find_subset_for_likelihood(likelihood)]
+                log_likelihood, blob = likelihood.compute_likelihood(pars_value_i)
+                if np.isinf(log_likelihood):
+                    return log_likelihood, blob
+        return log_likelihood_tot, blob_tot
+    
+    def log_prior_gaussian(self, value, mean, sigma):
+        return -0.5 * (value - mean) ** 2 / sigma**2
+
+    def log_prior_uniform(self, value, low, high):
+        if value < low or value > high:
+            return -np.inf
+        else:
+            return 0.0
 
 
 class SamplerNautilus(SamplerBase):
@@ -174,6 +226,9 @@ class SamplerNautilus(SamplerBase):
         init_pos: list[float] | np.ndarray,
         params_prior: list[tuple[str, float, float]],
         likelihood: list[LikelihoodBase],
+        derived_params_name: list[str] | None = None,
+        derived_params_expression: list[str] | None = None,
+        derived_params_prior: list[tuple[str, float, float]] | None = None,
         clear_cache: bool = True,
         n_live_points: int = 2000,
         f_live: float = 0.01,
@@ -183,6 +238,7 @@ class SamplerNautilus(SamplerBase):
         save_filename: str | None = None,
         mp_backend: str = "multiprocessing",
         nthreads: int = 1,
+        blob_shape: tuple[int, ...] | None = None,
     ):
         self.n_live_points = n_live_points
         self.f_live = f_live
@@ -190,11 +246,15 @@ class SamplerNautilus(SamplerBase):
         self.n_eff = n_eff
         self.mp_backend = mp_backend
         self.nthreads = nthreads
+        self.blob_shape = blob_shape
         super().__init__(
             params_name,
             init_pos,
             params_prior,
             likelihood,
+            derived_params_name,
+            derived_params_expression,
+            derived_params_prior,
             clear_cache,
             save,
             save_filename,
@@ -213,13 +273,37 @@ class SamplerNautilus(SamplerBase):
                 dist = truncnorm(a=a, b=b, loc=loc, scale=scale)
             prior.add_parameter(param_name, dist=dist)
         return prior
+    
+    def log_prior_derived(self, params_values):
+        derived_params_values = self.get_derived_params(params_values)
+        log_prior = 0.0
+        for i, param_name in enumerate(self.derived_params_name):
+            prior_func = getattr(self, f"log_prior_{self.derived_params_prior[i][0]}")
+            log_prior_i = prior_func(
+                derived_params_values[i],
+                self.derived_params_prior[i][1],
+                self.derived_params_prior[i][2],
+            )
+            log_prior += log_prior_i
+        return log_prior
 
     def log_likelihood(self, params_values):
         log_likelihood = 0.0
         blob = {}
+        params_values_full = np.array(params_values)
+        derived_params_values = self.get_derived_params(params_values)
+        params_values_full = np.concatenate([params_values_full, derived_params_values])
         for likelihood in self.likelihood:
-            pars_value_i = params_values[self.find_subset_for_likelihood(likelihood)]
-            log_likelihood_i, blob_i = likelihood.compute_likelihood(pars_value_i)
+            if isinstance(likelihood, LikelihoodPhotonConsFlag):
+                continue
+            pars_value_i = params_values_full[self.find_subset_for_likelihood(likelihood)]
+            for i in range(10):
+                try:
+                    log_likelihood_i, blob_i = likelihood.compute_likelihood(pars_value_i)
+                    break
+                except Exception as e:
+                    print(e)
+                    continue
             log_likelihood += log_likelihood_i
             blob.update(blob_i)
         # clear cache after computing likelihood
@@ -232,13 +316,27 @@ class SamplerNautilus(SamplerBase):
         return log_likelihood, blob
 
     def compute_log_likelihood(self, params_values):
+        # get derived params prior
+        derived_log_prior = self.log_prior_derived(params_values)
+        if np.isinf(derived_log_prior):
+            return derived_log_prior, np.zeros(self.blob_shape)
+        # make sure photoncon flag is computed first
+        if self.has_photoncons_flag:
+            ll, blob = self.compute_likelihood_for_photoncons_flag(params_values)
+            if ll == -np.inf:
+                # if blob is empty
+                if not blob:
+                    return ll
+                return ll, list(blob.values())[0].ravel()
+        print("start pars:", params_values)
         ll, blob = self.log_likelihood(params_values)
         blob_array = [arr.ravel() for arr in blob.values()]
+        print("end pars:", params_values)
         if blob_array != []:
             blob_array = np.concatenate(blob_array)
-            return ll, blob_array
+            return ll + derived_log_prior, blob_array
         else:
-            return ll
+            return ll + derived_log_prior
 
     def run(self, continue_from_last: bool = True, verbose: bool = True):
         pool = None
@@ -311,6 +409,9 @@ class SamplerEmcee(SamplerBase):
         nwalkers: int,
         nsteps: int,
         nthreads: int,
+        derived_params_name: list[str] | None = None,
+        derived_params_expression: list[str] | None = None,
+        derived_params_prior: list[tuple[str, float, float]] | None = None,
         mp_backend: str = "multiprocessing",
         save: bool = False,
         save_filename: str | None = None,
@@ -328,21 +429,15 @@ class SamplerEmcee(SamplerBase):
             init_pos,
             params_prior,
             likelihood,
+            derived_params_name,
+            derived_params_expression,
+            derived_params_prior,
             clear_cache,
             save,
             save_filename,
         )
         if self.clear_cache_after_some_steps is not None:
             self.clear_cache = False
-
-    def log_prior_gaussian(self, value, mean, sigma):
-        return -0.5 * (value - mean) ** 2 / sigma**2
-
-    def log_prior_uniform(self, value, low, high):
-        if value < low or value > high:
-            return -np.inf
-        else:
-            return 0.0
 
     def log_prior(self, params_values):
         log_prior = 0.0
@@ -359,8 +454,13 @@ class SamplerEmcee(SamplerBase):
     def log_likelihood(self, params_values):
         log_likelihood = 0.0
         blob = {}
+        params_values_full = np.array(params_values)
+        derived_params_values = self.get_derived_params(params_values)
+        params_values_full = np.concatenate([params_values_full, derived_params_values])
         for likelihood in self.likelihood:
-            pars_value_i = params_values[self.find_subset_for_likelihood(likelihood)]
+            if isinstance(likelihood, LikelihoodPhotonConsFlag):
+                continue
+            pars_value_i = params_values_full[self.find_subset_for_likelihood(likelihood)]
             log_likelihood_i, blob_i = likelihood.compute_likelihood(pars_value_i)
             log_likelihood += log_likelihood_i
             blob.update(blob_i)
@@ -411,6 +511,13 @@ class SamplerEmcee(SamplerBase):
                 return lp, np.zeros(self.blob_size) + np.nan
             else:
                 return lp
+        # make sure photoncon flag is computed first
+        if self.has_photoncons_flag:
+            ll, blob = self.compute_likelihood_for_photoncons_flag(params_values)
+            if ll == -np.inf:
+                if not blob:
+                    return ll
+                return ll, blob.values()[0].ravel()
         ll, blob = self.log_likelihood(params_values)
         blob_array = [arr.ravel() for arr in blob.values()]
         if blob_array != []:

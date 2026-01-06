@@ -108,6 +108,8 @@ class LikelihoodPhotonConsFlag(EoRSimulator, LikelihoodBase):
         regenerate: bool = False,
         global_params: dict | None = None,
         xhi_threshold: float = 0.001,
+        redshifts: list[float] | np.ndarray = None,
+        flag_type: str = "larger",
         blob_shape: tuple[int, ...] | None = None,
     ):
         EoRSimulator.__init__(
@@ -121,6 +123,8 @@ class LikelihoodPhotonConsFlag(EoRSimulator, LikelihoodBase):
                 regenerate=regenerate,
                 global_params=global_params,
                 xhi_threshold=xhi_threshold,
+                redshifts=redshifts,
+                flag_type=flag_type,
             )
         ]
         self.blob_shape = blob_shape
@@ -161,6 +165,8 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         model_err_fraction: float = 0.0,
         only_save_lc: bool = False,
         subdir_for_only_save_lc: bool = False,
+        z_min: float = -np.inf,
+        z_max: float = np.inf,
     ):
         EoRSimulator.__init__(
             self, inputs_21cmfast, cache_dir, regenerate, global_params
@@ -178,7 +184,10 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         # hard coded for now
         inverse_tau_bin_edges = np.linspace(0 - 0.0025, 1 + 0.0025, 202)
         redshift_bin_centers = np.linspace(5, 6.2, 7)
-        redshift_bin_edges = np.linspace(4.9, 6.3, 8)
+        #redshift_bin_edges = np.linspace(4.9, 6.3, 8)
+        sel = np.logical_and(redshift_bin_centers >= z_min, redshift_bin_centers <= z_max)
+        redshift_bin_centers = redshift_bin_centers[sel]
+        redshift_bin_edges = np.append(redshift_bin_centers-0.1, redshift_bin_centers[-1] + 0.1)
         data = []
         for z in redshift_bin_centers:
             data_i = np.load(
@@ -363,7 +372,10 @@ class LikelihoodLightconeNeutralFraction(EoRSimulator, LikelihoodGaussian):
         simulate_data: bool = False,
         simulate_error_fraction: float = 0.1,
         save_xhi_points: bool = False,
+        save_xhi_per_slice: bool = False,
         save_xhi_lc: bool = False,
+        only_save_lc: bool = False,
+        subdir_for_only_save_lc: bool = False,
     ):
         EoRSimulator.__init__(
             self, inputs_21cmfast, cache_dir, regenerate, global_params
@@ -378,6 +390,9 @@ class LikelihoodLightconeNeutralFraction(EoRSimulator, LikelihoodGaussian):
         self.lc_quantities = lc_quantities
         self.save_xhi_points = save_xhi_points
         self.save_xhi_lc = save_xhi_lc
+        self.save_xhi_per_slice = save_xhi_per_slice
+        self.only_save_lc = only_save_lc
+        self.subdir_for_only_save_lc = subdir_for_only_save_lc
         self.simulators = [
             LightconeNeutralFraction(
                 xhi_z_edges_low=xhi_z_edges_low,
@@ -390,7 +405,10 @@ class LikelihoodLightconeNeutralFraction(EoRSimulator, LikelihoodGaussian):
                 lc_max_redshift=lc_max_redshift,
                 lc_quantities=lc_quantities,
                 save_xhi_points=save_xhi_points,
+                save_xhi_per_slice=save_xhi_per_slice,
                 save_xhi_lc=save_xhi_lc,
+                only_save_lc=only_save_lc,
+                subdir_for_only_save_lc=subdir_for_only_save_lc,
             )
         ]
 

@@ -179,9 +179,9 @@ class CoevalNeutralFraction(CoevalSimulator):
 
 class CoevalPhotonConsFlag(CoevalNeutralFraction):
     """
-    Simulate the coeval cube at `PHOTONCONS_CALIBRATION_END` without photon conservation,
+    Simulate the coeval cube at a specific redshift without photon conservation,
     and calculate the global neutral fraction at that redshift. Returns a
-    flag indicating whether the global neutral fraction is smaller than the threshold.
+    flag indicating whether the global neutral fraction is smaller/larger than the threshold.
     This is useful in an inference run to be the first simulator to check,
     and if flagged, the parameter set should be rejected before running other simulators,
     to avoid an error being raised.
@@ -195,41 +195,66 @@ class CoevalPhotonConsFlag(CoevalNeutralFraction):
         cache_dir: str,
         regenerate: bool = False,
         global_params: dict | None = None,
-        xhi_threshold: float = 0.001,
+        xhi_threshold: float = 0.01,
+        redshifts: list[float] | np.ndarray = None,
+        flag_type: str = "larger",
     ):
         # only run at the end z of photoncon calibration
-        redshifts = [
-            inputs.astro_params.PHOTONCONS_CALIBRATION_END,
-        ]
+        if redshifts is None:
+            redshifts = [
+                inputs.astro_params.PHOTONCONS_CALIBRATION_END,
+            ]
         if inputs.astro_options.PHOTON_CONS_TYPE == "no-photoncons":
             self.run_photoncons = False
         else:
             self.run_photoncons = True
             # evolve input struct to turn off photon conservation
+            # also turn off TS fluct, inhomo reco, and mini halos
+            # zstep_factor=0.9 to avoid having node redshifts
             inputs = inputs.evolve_input_structs(
                 PHOTON_CONS_TYPE="no-photoncons",
-            )
+                USE_TS_FLUCT=False,
+                INHOMO_RECO=False,
+                USE_MINI_HALOS=False,
+            ).with_logspaced_redshifts(zmin=redshifts[0], zmax=35.0, zstep_factor=0.9)
         super().__init__(redshifts, inputs, cache_dir, regenerate, global_params)
         self.xhi_threshold = xhi_threshold
+        self.flag_type = flag_type
 
     def simulate(self, update_params: dict = {}):
         """
-        Simulate the coeval cubes at the end z of photoncon calibration.
-        Skip if PHOTON_CONS_TYPE is "no-photoncons".
+        To avoid caching error for input and output consistency,
+        we do not save the coeval cube at this step.
+        Simulate therefore is empty.
         """
-        if not self.run_photoncons:
-            return 1.0
-        return super().simulate(update_params)
+        return 1.0
 
     def build_model_data(self, update_params: dict = {}):
+        """
+        To avoid caching error for input and output consistency,
+        we do not save the coeval cube at this step.
+        Simulate therefore is empty and build_model_data runs the
+        coeval cube without photon conservation with caching off.
+        """
         if not self.run_photoncons:
-            return False
-        inputs = self.get_update_input(update_params)
-        xhibox = [p21.IonizedBox.new(redshift=z, inputs=inputs) for z in self.redshifts]
+            return False, {}
+        cacheconfig = p21.CacheConfig.off()
         cache = OutputCache(self.cache_dir)
-        xhibox = [
-            p21.io.h5.read_output_struct(cache.find_existing(path)) for path in xhibox
-        ]
-        global_xhi = [xhi.get("neutral_fraction").mean() for xhi in xhibox][0]
-        flag = global_xhi > self.xhi_threshold
-        return flag, {}
+        inputs = self.get_update_input(update_params)
+        coeval = p21.run_coeval(
+            out_redshifts=self.redshifts,
+            inputs=inputs,
+            write=cacheconfig,
+            regenerate=self.regenerate,
+            cache=cache,
+            **self.global_params,
+        )[0]
+        global_xhi = coeval.neutral_fraction.mean()
+        #xhibox = [p21.IonizedBox.new(redshift=z, inputs=inputs) for z in self.redshifts]
+        #cache = OutputCache(self.cache_dir)
+        #xhibox = [
+        #    p21.io.h5.read_output_struct(cache.find_existing(path)) for path in xhibox
+        #]
+        #global_xhi = [xhi.get("neutral_fraction").mean() for xhi in xhibox][0]
+        flag = global_xhi < self.xhi_threshold if self.flag_type == "smaller" else global_xhi > self.xhi_threshold
+        return flag, {"global_xhi": global_xhi}
