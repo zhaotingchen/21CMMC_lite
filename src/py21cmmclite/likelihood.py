@@ -164,6 +164,7 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         subdir_for_only_save_lc: bool = False,
         z_min: float = -np.inf,
         z_max: float = np.inf,
+        cut_threshold: float = 0.001,
     ):
         EoRSimulator.__init__(
             self, inputs_21cmfast, cache_dir, regenerate, global_params
@@ -175,6 +176,7 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
         self.use_limit_pdf = use_limit_pdf
         self.only_save_lc = only_save_lc
         self.subdir_for_only_save_lc = subdir_for_only_save_lc
+        self.cut_threshold = cut_threshold
         data_dir = os.path.join(
             os.path.dirname(__file__), f"data/Forests/{observation}"
         )
@@ -203,7 +205,14 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
                 if data_i_limit.size > 0:
                     data_i = np.vstack((data_i, data_i_limit))
             data.append(data_i)
-        self.inv_tau_pdf_data = data
+        # data is sum normalised, whereas we need the PDF
+        self.inv_tau_pdf_data = [data_i / np.diff(inverse_tau_bin_edges)[0] for data_i in data]
+        # some data produce negative values of tau, which then adds to zeroth bin. Set to zero.
+        # This is better than throwing them away, because then the PDF will not be normalised to 1,
+        # instead, a small part is missing due to these negative values.
+        for i, data_i in enumerate(self.inv_tau_pdf_data):
+            data_i[:,0] = 0.0
+            self.inv_tau_pdf_data[i] = data_i
         lc_quantities = [
             "brightness_temp",
             "neutral_fraction",
@@ -238,18 +247,37 @@ class LikelihoodForest(EoRSimulator, LikelihoodBase):
     def gather_data(self):
         return [self.inv_tau_pdf_data]
 
+    #def likelihood_function(self, model, data):
+    #    log_p = 0.0
+    #    model = model[0]
+    #    data = data[0]
+    #    for i in range(len(self.simulators[0].redshift_bin_edges) - 1):
+    #        log_prob_i = np.log(
+    #            (self.inv_tau_pdf_data[i] * model[i] / model[i].max()).sum(1)
+    #        ) * (self.inv_tau_pdf_data[i]).sum(1)
+    #        log_p += log_prob_i.sum()
+    #    if np.isnan(log_p) or np.isinf(log_p):
+    #        log_p = -np.inf
+    #    return log_p
     def likelihood_function(self, model, data):
-        log_p = 0.0
+        """
+        Cross-entropy likelihood
+        """
+        log_l = 0.0
         model = model[0]
         data = data[0]
+        delta_bin = np.diff(self.simulators[0].inverse_tau_bin_edges)[0]
+        cut_threshold = self.cut_threshold
         for i in range(len(self.simulators[0].redshift_bin_edges) - 1):
-            log_prob_i = np.log(
-                (self.inv_tau_pdf_data[i] * model[i] / model[i].max()).sum(1)
-            ) * (self.inv_tau_pdf_data[i]).sum(1)
-            log_p += log_prob_i.sum()
-        if np.isnan(log_p) or np.isinf(log_p):
-            log_p = -np.inf
-        return log_p
+            model_i = model[i]
+            sel_i = model_i>0
+            data_i = data[i]
+            for j in range(len(data_i)):
+                data_q_j = data_i[j]
+                if any(model_i[(data_q_j / data_q_j.max())>cut_threshold]==0):
+                    return -np.inf
+            log_l += (np.log(model_i[sel_i]) * data_q_j[sel_i]).sum() * delta_bin
+        return log_l
 
 
 class LikelihoodGaussian(LikelihoodBase):

@@ -457,9 +457,15 @@ class LightconeLyaOpticalDepth(LightconeSimulator):
                     1 + np.random.normal(0, self.model_err_fraction, tau_gp[i].shape)
                 )
                 tau_gp_i[tau_gp_i <= 0] = 1e-4
+            # if we use density=True, the PDF is normalised to 1 **within the bins**
+            # instead of 1 **overall**. So instead we need to convert to PDF manually.
+            #tau_pdf_i = np.histogram(
+            #    tau_gp_i**-1, bins=self.inverse_tau_bin_edges, density=True
+            #)[0]
             tau_pdf_i = np.histogram(
-                tau_gp_i**-1, bins=self.inverse_tau_bin_edges, density=True
+                tau_gp_i**-1, bins=self.inverse_tau_bin_edges, density=False
             )[0]
+            tau_pdf_i = tau_pdf_i / tau_gp_i.size / np.diff(self.inverse_tau_bin_edges)[0]
             tau_pdf_i[np.isnan(tau_pdf_i)] = 0.0
             tau_pdf.append(tau_pdf_i)
         tau_pdf = np.array(tau_pdf)
