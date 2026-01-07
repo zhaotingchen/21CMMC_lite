@@ -11,6 +11,8 @@ from scipy.stats import norm, truncnorm
 from .lightcone import LightconeSimulator
 import glob
 import shutil
+import h5py
+from scipy.special import logsumexp
 
 inputs_21cmfast = p21.InputParameters.from_template(
     "simple",
@@ -393,6 +395,51 @@ class SamplerNautilus(SamplerBase):
         )
         points, log_w, log_l, blob = sampler.posterior(return_blobs=True)
         return points, log_w, log_l, blob
+    
+    def get_posterior_from_file(self, filename: str | None = None):
+        """
+        In rare cases, the sampler towards the threshold f_live may instead
+        produce NaN values and treat every point as exploration.
+        In most cases, not discarding the exploration points is fine.
+        This function is to get the posterior from the file from all the points.
+        The calculation is fully consistent with nautilus source code when
+        discard_exploration is False.
+        """
+        if filename is None:
+            filename = self.save_filename
+        with h5py.File(filename, "r") as f:
+            data = f['sampler']
+            shell_num = 0
+            for key in data.keys():
+                if 'blobs_' in key:
+                    shell_num+=1
+            shell_name = [str(i) for i in range(shell_num-1)]
+            points = [np.array(data[f'points_{i}']) for i in shell_name]
+            shell_n = np.array([point_i.shape[0] for point_i in points])
+            points = np.concatenate(points)
+            log_l = np.concatenate(
+                [np.array(data[f'log_l_{i}']) for i in shell_name]
+            )
+            blobs = np.concatenate(
+                [np.array(data[f'blobs_{i}']) for i in shell_name]
+            )
+            dummy = nautilus.Sampler(
+                self.get_nautilus_prior(),
+                self.compute_log_likelihood,
+                pass_dict=False,
+                filepath=filename,
+            )
+            shell_log_v = np.zeros(len(dummy.bounds))
+            for i in range(1,len(dummy.bounds)):
+                shell_log_v[i] = (
+                    dummy.bounds[i].log_v
+                )
+            log_v = np.repeat(
+                shell_log_v -np.log(np.maximum(shell_n, 1)), shell_n
+            )
+            log_w = log_v + log_l
+            log_w = log_w - logsumexp(log_w)
+        return points,log_w, log_l, blobs
 
 
 class SamplerEmcee(SamplerBase):
