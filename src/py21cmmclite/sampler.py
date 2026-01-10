@@ -439,6 +439,8 @@ class SamplerNautilus(SamplerBase):
             )
             log_w = log_v + log_l
             log_w = log_w - logsumexp(log_w)
+            transform = dummy.prior.unit_to_physical
+            points = np.array(list(map(transform, points)))
         return points,log_w, log_l, blobs
 
 
