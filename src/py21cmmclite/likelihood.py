@@ -616,7 +616,7 @@ class LikelihoodCobaya(LikelihoodBase):
         from .util import get_cobaya_sampled_params
         
         self.model = get_model(yaml_file)
-        varied_params = get_cobaya_sampled_params(self.model)
+        varied_params = list(get_cobaya_sampled_params(self.model))
         self.varied_params = varied_params
         self.simulators = []
 

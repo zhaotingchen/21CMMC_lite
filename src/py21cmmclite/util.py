@@ -46,12 +46,14 @@ def get_cobaya_nuisance_reference_values(model):
     return init_params_dict
 
 
-def get_nautilus_prior_for_cobaya(model):
+def get_nautilus_prior_for_cobaya(model, ignore_tau=True):
     """
     Get the nautilus prior for the model.
     """
     prior_dict = dict(zip(model.prior.params, model.prior.pdf))
     prior = Prior()
     for key, item in prior_dict.items():
+        if ignore_tau and key == 'tau':
+            continue
         prior.add_parameter(key, dist = item)
     return prior
