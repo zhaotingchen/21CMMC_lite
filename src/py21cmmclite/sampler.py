@@ -677,3 +677,40 @@ class SamplerEmcee(SamplerBase):
             return blob_dict
         else:
             return blobs
+
+class SamplerCobaya():
+    """
+    Sampler that allows cobaya to interact with other samplers.
+    Using this will assume all cosmological parameters are varied,
+    with the optical depth parameter coming from EoR simulations.
+    """
+    def __init__(self,
+        yaml_file: str,
+        sampler_type: str,
+        sampler_args: dict,
+        sampler_kwargs: dict,
+    ):
+        self.yaml_file = yaml_file
+        if sampler_type == 'SamplerNautilus':
+            self.eor_sampler = SamplerNautilus(*sampler_args, **sampler_kwargs)
+        elif sampler_type == 'SamplerEmcee':
+            self.eor_sampler = SamplerEmcee(*sampler_args, **sampler_kwargs)
+        else:
+            raise ValueError(f"Unsupported sampler type: {sampler_type}")
+    
+    def convert_cobaya_params_to_21cmfast(self, params_dict):
+        """
+        Convert the cosmological parameters from cobaya dict to 21cmfast dict.
+        """
+        output_dict = {}
+        if "As" in params_dict:
+            output_dict["A_s"] = params_dict["As"]
+        elif "logA" in params_dict:
+            output_dict["A_s"] = np.exp(params_dict["logA"])*1e-10
+        else:
+            raise ValueError(f"As or logA must be provided in the params_dict")
+        output_dict["hlittle"] = params_dict["H0"]/100
+        output_dict["OMm"] = (params_dict["ombh2"] + params_dict["omch2"])/(params_dict["H0"]/100)**2
+        output_dict["OMb"] = params_dict["ombh2"]/(params_dict["H0"]/100)**2
+        output_dict["POWER_INDEX"] = params_dict["ns"]
+        return output_dict

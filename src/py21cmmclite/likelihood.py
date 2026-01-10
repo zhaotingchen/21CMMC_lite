@@ -602,3 +602,39 @@ class LikelihoodLuminosityFunction(LikelihoodGaussian):
             lf_interp.append(lf_i)
         lf_interp = np.concatenate(lf_interp)
         return super().likelihood_function(lf_interp, data)
+
+class LikelihoodCobaya(LikelihoodBase):
+    """
+    Likelihood class for cobaya.
+    """
+
+    def __init__(
+        self,
+        yaml_file: str,
+    ):
+        from cobaya.model import get_model
+        from .util import get_cobaya_sampled_params
+        
+        self.model = get_model(yaml_file)
+        varied_params = get_cobaya_sampled_params(self.model)
+        self.varied_params = varied_params
+        self.simulators = []
+
+    def invoke_simulators(self, params_values=None):
+        pass
+
+    def gather_model(self, params_values=None):
+        pass
+
+    def likelihood_function(self, model, data):
+        pass
+
+    def compute_likelihood(self, varied_params_values):
+        params = dict(zip(self.varied_params, varied_params_values))
+        log_like, derived = self.model.loglikes(
+            params, 
+            return_derived=True, 
+            as_dict=True
+        )
+        log_like_sum = np.array(list(log_like.values())).sum()
+        return log_like_sum, derived
