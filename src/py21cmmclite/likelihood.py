@@ -611,6 +611,7 @@ class LikelihoodCobaya(LikelihoodBase):
     def __init__(
         self,
         yaml_file: str,
+        return_derived: bool = False,
     ):
         from cobaya.model import get_model
         from .util import get_cobaya_sampled_params
@@ -619,7 +620,8 @@ class LikelihoodCobaya(LikelihoodBase):
         varied_params = list(get_cobaya_sampled_params(self.model))
         self.varied_params = varied_params
         self.simulators = []
-
+        self.return_derived = return_derived
+        
     def invoke_simulators(self, params_values=None):
         pass
 
@@ -637,4 +639,7 @@ class LikelihoodCobaya(LikelihoodBase):
             as_dict=True
         )
         log_like_sum = np.array(list(log_like.values())).sum()
-        return log_like_sum, derived
+        if self.return_derived:
+            return log_like_sum, derived
+        else:
+            return log_like_sum
